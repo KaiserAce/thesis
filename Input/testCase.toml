@@ -1,0 +1,23 @@
+[description]
+_description = "Test Parameters for Base Model"
+
+[simulation]
+seed = 0
+max_time_step = 1000000
+population = 20
+dynamic_rank = true
+output_directory = "test_output"
+
+[agent_parameters]
+strat_learning_speed = 0.01
+net_learning_speed = 0.01
+strat_discount = 0.01
+net_discount = 0.01
+strat_tremble = 0.01
+net_tremble = 0.01
+
+[payoffs]
+hd = 1.0
+dh = 0.4
+dd = 0.6
+hh_f = 0.5

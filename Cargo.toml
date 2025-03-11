@@ -4,5 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+config = "0.15.9"
 rand = "0.9.0"
 rand_chacha = "0.9.0"
+serde = "1.0.219"

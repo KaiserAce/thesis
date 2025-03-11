@@ -1,7 +1,10 @@
+mod utils;
+
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
+use std::env;
 use std::ops::{Index, IndexMut};
-use std::{env, usize};
+use utils::{RootConfig, AgentParameters, PayoffScores, read_config_file};
 
 enum Role {
     Host,
@@ -49,12 +52,7 @@ impl IndexMut<AgentId> for Vec<Agent> {
 
 struct Agent {
     agent_id: AgentId,
-    strat_learning_speed: f64,
-    net_learning_speed: f64,
-    strat_discount: f64,
-    net_discount: f64,
-    strat_tremble: f64,
-    net_tremble: f64,
+    agent_param: AgentParameters,
     score: f64,
     total_payoff: f64,
     current_partner: AgentId,
@@ -76,15 +74,10 @@ struct PayoffMap {
 }
 
 impl Agent {
-    fn new(agent_id: AgentId, score: f64) -> Agent {
+    fn new(agent_id: AgentId, score: f64, agent_param: AgentParameters) -> Agent {
         Agent {
             agent_id,
-            strat_learning_speed: 0.01,
-            net_learning_speed: 0.01,
-            strat_discount: 0.01,
-            net_discount: 0.01,
-            strat_tremble: 0.01,
-            net_tremble: 0.01,
+            agent_param,
             score,
             total_payoff: 0.0,
             current_partner: AgentId(0),
@@ -103,9 +96,9 @@ impl Agent {
         let mut friend_id: Option<usize> = None;
         let rand_tremble: f64 = rng.random();
 
-        if rand_tremble < self.net_tremble {
+        if rand_tremble < self.agent_param.net_tremble {
             for i in 0..temp_vec.len() {
-                network.discount_weight(self.agent_id, AgentId(i as u32), self.net_discount);
+                network.discount_weight(self.agent_id, AgentId(i as u32), self.agent_param.net_discount);
             }
 
             let partner_id: AgentId = AgentId(*temp_vec.choose(rng).unwrap() as u32);
@@ -128,7 +121,7 @@ impl Agent {
                     friend_id = Some(temp_vec[i]);
                 }
 
-                network.discount_weight(self.agent_id, AgentId(i as u32), self.net_discount);
+                network.discount_weight(self.agent_id, AgentId(i as u32), self.agent_param.net_discount);
             }
             let partner_id: AgentId =
                 AgentId(friend_id.unwrap_or_else(|| *temp_vec.choose(rng).unwrap()) as u32);
@@ -140,7 +133,7 @@ impl Agent {
     fn choose_strategy(&mut self, rng: &mut ChaCha8Rng, role: Role) {
         let tremble_draw: f64 = rng.random();
 
-        if tremble_draw < self.strat_tremble {
+        if tremble_draw < self.agent_param.strat_tremble {
             let strategy = rng.random_range(0..2);
             self.current_strategy = match strategy {
                 0 => Strategy::Hawk,
@@ -150,8 +143,7 @@ impl Agent {
             let strat_vec = self.strategy.get_strat(&role);
             strat_vec
                 .iter_mut()
-                .for_each(|x| *x *= 1.0 - self.strat_discount);
-            return;
+                .for_each(|x| *x *= 1.0 - self.agent_param.strat_discount);
         } else {
             let strat_vec = self.strategy.get_strat(&role);
 
@@ -180,27 +172,36 @@ impl Agent {
             let strat_vec = self.strategy.get_strat(&role);
             strat_vec
                 .iter_mut()
-                .for_each(|x| *x *= 1.0 - self.strat_discount);
+                .for_each(|x| *x *= 1.0 - self.agent_param.strat_discount);
         }
     }
 
     fn add_network_payoff(&mut self, network: &mut Network) {
-        network[self.agent_id][self.current_partner.0 as usize] += self.current_payoff * self.net_learning_speed;
+        network[self.agent_id][self.current_partner.0 as usize] +=
+            self.current_payoff * self.agent_param.net_learning_speed;
     }
 
     fn add_strategy_payoff(&mut self, role: Role) {
         let index = match self.current_strategy {
             Strategy::Hawk => 0,
             Strategy::Dove => 1,
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         match role {
-            Role::Visitor => self.strategy.visit[index] += self.current_payoff * self.strat_learning_speed,
-            Role::Host => self.strategy.host[index] += self.current_payoff * self.strat_learning_speed,
+            Role::Visitor => {
+                self.strategy.visit[index] += self.current_payoff * self.agent_param.strat_learning_speed
+            }
+            Role::Host => {
+                self.strategy.host[index] += self.current_payoff * self.agent_param.strat_learning_speed
+            }
         }
-        
+
         self.total_payoff += self.current_payoff
+    }
+
+    fn update_score(&mut self) {
+        self.score = self.total_payoff;
     }
 }
 
@@ -227,12 +228,12 @@ impl Network {
 }
 
 impl PayoffMap {
-    fn new() -> PayoffMap {
+    fn new(payoff: PayoffScores) -> PayoffMap {
         PayoffMap {
-            host: vec![[0.0, 0.4].to_vec(), [1.0, 0.6].to_vec()],
-            visitor: vec![[0.0, 1.0].to_vec(), [0.4, 0.6].to_vec()],
-            win: 0.6,
-            lose: 0.2,
+            host: vec![[0.0, payoff.dh].to_vec(), [1.0, payoff.dd].to_vec()],
+            visitor: vec![[0.0, payoff.hd].to_vec(), [0.4, payoff.dd].to_vec()],
+            win: payoff.hh_f,
+            lose: payoff.hh_f/3.0,
         }
     }
 }
@@ -277,19 +278,21 @@ fn game(
 }
 
 fn run_time_step(
+    i: u64,
     rng: &mut ChaCha8Rng,
     agents: &mut Vec<Agent>,
     pop: usize,
     network: &mut Network,
     payoffs: &PayoffMap,
+    dynamic_rank: bool,
 ) {
     let mut agent_seq: Vec<usize> = (0..pop).collect();
     agent_seq.shuffle(rng);
 
     for &id in &agent_seq {
-        let mut temp_vec: Vec<usize> = agent_seq.iter().filter(|&&x| x != id).cloned().collect();
+        let temp_vec: Vec<usize> = agent_seq.iter().filter(|&&x| x != id).cloned().collect();
 
-        let host_id: AgentId = agents[id].partner_pick(rng, &mut temp_vec, network);
+        let host_id: AgentId = agents[id].partner_pick(rng, &temp_vec, network);
 
         {
             let visitor = &mut agents[id];
@@ -309,23 +312,43 @@ fn run_time_step(
         agents[id].add_strategy_payoff(Role::Visitor);
         agents[host_id].add_strategy_payoff(Role::Host);
     }
+
+    if dynamic_rank {
+        if i+1 % 1000 == 0 {
+            for j in 0..pop {
+                agents[j].update_score();
+            }
+        }
+    }
 }
 
 fn main() {
-    let seed = 0;
-    let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    let max_time_step: usize = 100000000;
-    let pop: usize = 20;
+    let args: Vec<String> = env::args().collect();
 
-    let mut agents: Vec<Agent> = Vec::new();
-    let mut network: Network = Network(vec![vec![0.5; pop]; pop]);
-    let payoffs: PayoffMap = PayoffMap::new();
-
-    for i in 0..pop {
-        agents.push(Agent::new(AgentId(i as u32), rng.random()));
+    if args.len() < 1 {
+        panic!("Wrong arguments entered!")
     }
 
-    for _i in 1..=max_time_step {
-        run_time_step(&mut rng, &mut agents, pop, &mut network, &payoffs);
+    let source_file = args[0].clone();
+
+    let config: RootConfig = read_config_file(&source_file);
+
+    let seed = config.simulation.seed;
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let max_time_step: u64 = config.simulation.max_time_step;
+    let pop: u32 = config.simulation.population;
+    let dynamic_rank: bool = config.simulation.dynamic_rank;
+    let _output_directory: String = config.simulation.output_directory;
+
+    let mut agents: Vec<Agent> = Vec::new();
+    let mut network = Network(vec![vec![1.0/pop as f64; pop as usize]; pop as usize]);
+    let payoffs = PayoffMap::new(config.payoffs);
+
+    for i in 0..pop {
+        agents.push(Agent::new(AgentId(i as u32), rng.random(), config.agent));
+    }
+
+    for i in 1..=max_time_step {
+        run_time_step(i, &mut rng, &mut agents, pop as usize, &mut network, &payoffs, dynamic_rank);
     }
 }
