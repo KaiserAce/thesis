@@ -1,11 +1,18 @@
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
-use std::{env, usize};
 use std::ops::{Index, IndexMut};
+use std::{env, usize};
 
 enum Role {
     Host,
     Visitor,
+}
+
+#[derive(Clone, Copy)]
+enum Strategy {
+    None,
+    Hawk,
+    Dove,
 }
 
 #[derive(Clone, Copy)]
@@ -15,7 +22,7 @@ struct Network(Vec<Vec<f64>>);
 
 impl Index<AgentId> for Network {
     type Output = Vec<f64>;
-    
+
     fn index(&self, index: AgentId) -> &Self::Output {
         &self.0[index.0 as usize]
     }
@@ -24,6 +31,19 @@ impl Index<AgentId> for Network {
 impl IndexMut<AgentId> for Network {
     fn index_mut(&mut self, index: AgentId) -> &mut Self::Output {
         &mut self.0[index.0 as usize]
+    }
+}
+
+impl Index<AgentId> for Vec<Agent> {
+    type Output = Agent;
+    fn index(&self, index: AgentId) -> &Agent {
+        &self[index.0 as usize]
+    }
+}
+
+impl IndexMut<AgentId> for Vec<Agent> {
+    fn index_mut(&mut self, index: AgentId) -> &mut Self::Output {
+        &mut self[index.0 as usize]
     }
 }
 
@@ -36,15 +56,23 @@ struct Agent {
     strat_tremble: f64,
     net_tremble: f64,
     score: f64,
+    total_payoff: f64,
     current_partner: AgentId,
-    strategy: Strategy,
-    current_strategy: usize,
-    current_payoff: usize,
+    strategy: StratVector,
+    current_strategy: Strategy,
+    current_payoff: f64,
 }
 
-struct Strategy {
+struct StratVector {
     visit: [f64; 2],
     host: [f64; 2],
+}
+
+struct PayoffMap {
+    host: Vec<Vec<f32>>,
+    visitor: Vec<Vec<f32>>,
+    win: f32,
+    lose: f32,
 }
 
 impl Agent {
@@ -58,10 +86,11 @@ impl Agent {
             strat_tremble: 0.01,
             net_tremble: 0.01,
             score,
+            total_payoff: 0.0,
             current_partner: AgentId(0),
-            strategy: Strategy::new(),
-            current_strategy: 0,
-            current_payoff: 0,
+            strategy: StratVector::new(),
+            current_strategy: Strategy::None,
+            current_payoff: 0.0,
         }
     }
 
@@ -101,7 +130,8 @@ impl Agent {
 
                 network.discount_weight(self.agent_id, AgentId(i as u32), self.net_discount);
             }
-            let partner_id: AgentId = AgentId(friend_id.unwrap_or_else(|| *temp_vec.choose(rng).unwrap()) as u32);
+            let partner_id: AgentId =
+                AgentId(friend_id.unwrap_or_else(|| *temp_vec.choose(rng).unwrap()) as u32);
             self.current_partner = partner_id;
             partner_id
         }
@@ -111,12 +141,19 @@ impl Agent {
         let tremble_draw: f64 = rng.random();
 
         if tremble_draw < self.strat_tremble {
-            self.current_strategy = rng.random_range(0..2);
+            let strategy = rng.random_range(0..2);
+            self.current_strategy = match strategy {
+                0 => Strategy::Hawk,
+                1 => Strategy::Dove,
+                _ => unreachable!(),
+            };
+            let strat_vec = self.strategy.get_strat(&role);
+            strat_vec
+                .iter_mut()
+                .for_each(|x| *x *= 1.0 - self.strat_discount);
             return;
         } else {
             let strat_vec = self.strategy.get_strat(&role);
-
-            let mut strat: Option<usize> = None;
 
             let partial_sum: Vec<f64> = strat_vec
                 .iter()
@@ -130,22 +167,46 @@ impl Agent {
             let weight_strat_draw = rand_prob * partial_sum.last().unwrap_or(&0.0);
 
             for i in 0..partial_sum.len() {
-                if strat.is_none() && weight_strat_draw <= partial_sum[i] {
-                    strat = Some(i);
-                    self.current_strategy = strat.unwrap();
+                if weight_strat_draw <= partial_sum[i] {
+                    let strategy = i;
+                    self.current_strategy = match strategy {
+                        0 => Strategy::Hawk,
+                        1 => Strategy::Dove,
+                        _ => unreachable!(),
+                    };
+                    break;
                 }
             }
-            self.strategy
-                .get_strat(&role)
+            let strat_vec = self.strategy.get_strat(&role);
+            strat_vec
                 .iter_mut()
                 .for_each(|x| *x *= 1.0 - self.strat_discount);
         }
     }
+
+    fn add_network_payoff(&mut self, network: &mut Network) {
+        network[self.agent_id][self.current_partner.0 as usize] += self.current_payoff * self.net_learning_speed;
+    }
+
+    fn add_strategy_payoff(&mut self, role: Role) {
+        let index = match self.current_strategy {
+            Strategy::Hawk => 0,
+            Strategy::Dove => 1,
+            _ => unreachable!()
+        };
+
+        match role {
+            Role::Visitor => self.strategy.visit[index] += self.current_payoff * self.strat_learning_speed,
+            Role::Host => self.strategy.host[index] += self.current_payoff * self.strat_learning_speed,
+        }
+        
+        self.total_payoff += self.current_payoff
+    }
 }
 
-impl Strategy {
-    fn new() -> Strategy {
-        Strategy {
+impl StratVector {
+    fn new() -> StratVector {
+        StratVector {
             visit: [0.5, 0.5],
             host: [0.5, 0.5],
         }
@@ -165,13 +226,62 @@ impl Network {
     }
 }
 
-fn game() {}
+impl PayoffMap {
+    fn new() -> PayoffMap {
+        PayoffMap {
+            host: vec![[0.0, 0.4].to_vec(), [1.0, 0.6].to_vec()],
+            visitor: vec![[0.0, 1.0].to_vec(), [0.4, 0.6].to_vec()],
+            win: 0.6,
+            lose: 0.2,
+        }
+    }
+}
+
+fn game(
+    _rng: &mut ChaCha8Rng,
+    visitor: AgentId,
+    host: AgentId,
+    agents: &mut Vec<Agent>,
+    payoffs: &PayoffMap,
+) {
+    let visitor_score: f64 = agents[visitor].score;
+    let host_score: f64 = agents[host].score;
+
+    let visitor_strategy: Strategy = agents[visitor].current_strategy;
+    let host_strategy: Strategy = agents[host].current_strategy;
+
+    match (visitor_strategy, host_strategy) {
+        (Strategy::Hawk, Strategy::Hawk) => {
+            if visitor_score > host_score {
+                agents[visitor].current_payoff = payoffs.win as f64;
+                agents[host].current_payoff = payoffs.lose as f64;
+            } else {
+                agents[visitor].current_payoff = payoffs.lose as f64;
+                agents[host].current_payoff = payoffs.win as f64;
+            }
+        }
+        (Strategy::Hawk, Strategy::Dove) => {
+            agents[visitor].current_payoff = payoffs.visitor[0][1] as f64;
+            agents[host].current_payoff = payoffs.host[0][1] as f64;
+        }
+        (Strategy::Dove, Strategy::Hawk) => {
+            agents[visitor].current_payoff = payoffs.visitor[1][0] as f64;
+            agents[host].current_payoff = payoffs.host[1][0] as f64;
+        }
+        (Strategy::Dove, Strategy::Dove) => {
+            agents[visitor].current_payoff = payoffs.visitor[1][1] as f64;
+            agents[host].current_payoff = payoffs.host[1][1] as f64;
+        }
+        _ => unreachable!(),
+    }
+}
 
 fn run_time_step(
     rng: &mut ChaCha8Rng,
     agents: &mut Vec<Agent>,
     pop: usize,
     network: &mut Network,
+    payoffs: &PayoffMap,
 ) {
     let mut agent_seq: Vec<usize> = (0..pop).collect();
     agent_seq.shuffle(rng);
@@ -191,6 +301,13 @@ fn run_time_step(
             let host = &mut agents[host_id.0 as usize];
             host.choose_strategy(rng, Role::Host);
         }
+
+        game(rng, AgentId(id as u32), host_id, agents, payoffs);
+
+        agents[id].add_network_payoff(network);
+
+        agents[id].add_strategy_payoff(Role::Visitor);
+        agents[host_id].add_strategy_payoff(Role::Host);
     }
 }
 
@@ -202,12 +319,13 @@ fn main() {
 
     let mut agents: Vec<Agent> = Vec::new();
     let mut network: Network = Network(vec![vec![0.5; pop]; pop]);
+    let payoffs: PayoffMap = PayoffMap::new();
 
     for i in 0..pop {
         agents.push(Agent::new(AgentId(i as u32), rng.random()));
     }
 
-    for i in 1..=max_time_step {
-        run_time_step(&mut rng, &mut agents, pop, &mut network);
+    for _i in 1..=max_time_step {
+        run_time_step(&mut rng, &mut agents, pop, &mut network, &payoffs);
     }
 }
