@@ -4,7 +4,10 @@ use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
 use std::env;
 use std::ops::{Index, IndexMut};
-use utils::{RootConfig, AgentParameters, PayoffScores, read_config_file};
+use utils::{
+    AgentParameters, InteractionTracker, PayoffScores, RootConfig, create_directories,
+    read_config_file, run_track_vars,
+};
 
 enum Role {
     Host,
@@ -98,7 +101,11 @@ impl Agent {
 
         if rand_tremble < self.agent_param.net_tremble {
             for i in 0..temp_vec.len() {
-                network.discount_weight(self.agent_id, AgentId(i as u32), self.agent_param.net_discount);
+                network.discount_weight(
+                    self.agent_id,
+                    AgentId(i as u32),
+                    self.agent_param.net_discount,
+                );
             }
 
             let partner_id: AgentId = AgentId(*temp_vec.choose(rng).unwrap() as u32);
@@ -121,7 +128,11 @@ impl Agent {
                     friend_id = Some(temp_vec[i]);
                 }
 
-                network.discount_weight(self.agent_id, AgentId(i as u32), self.agent_param.net_discount);
+                network.discount_weight(
+                    self.agent_id,
+                    AgentId(i as u32),
+                    self.agent_param.net_discount,
+                );
             }
             let partner_id: AgentId =
                 AgentId(friend_id.unwrap_or_else(|| *temp_vec.choose(rng).unwrap()) as u32);
@@ -190,10 +201,12 @@ impl Agent {
 
         match role {
             Role::Visitor => {
-                self.strategy.visit[index] += self.current_payoff * self.agent_param.strat_learning_speed
+                self.strategy.visit[index] +=
+                    self.current_payoff * self.agent_param.strat_learning_speed
             }
             Role::Host => {
-                self.strategy.host[index] += self.current_payoff * self.agent_param.strat_learning_speed
+                self.strategy.host[index] +=
+                    self.current_payoff * self.agent_param.strat_learning_speed
             }
         }
 
@@ -222,6 +235,16 @@ impl StratVector {
 }
 
 impl Network {
+    fn new(pop: usize) -> Network {
+        let mut network_weights = vec![vec![1.0 / (pop - 1) as f64; pop]; pop];
+
+        for i in 0..pop {
+            network_weights[i][i] = 0.0;
+        }
+
+        Network(network_weights)
+    }
+
     fn discount_weight(&mut self, agent_id: AgentId, partner_id: AgentId, net_discount: f64) {
         self.0[agent_id.0 as usize][partner_id.0 as usize] *= 1.0 - net_discount;
     }
@@ -233,7 +256,7 @@ impl PayoffMap {
             host: vec![[0.0, payoff.dh].to_vec(), [1.0, payoff.dd].to_vec()],
             visitor: vec![[0.0, payoff.hd].to_vec(), [0.4, payoff.dd].to_vec()],
             win: payoff.hh_f,
-            lose: payoff.hh_f/3.0,
+            lose: payoff.hh_f / 3.0,
         }
     }
 }
@@ -244,6 +267,7 @@ fn game(
     host: AgentId,
     agents: &mut Vec<Agent>,
     payoffs: &PayoffMap,
+    interaction_tracker: &mut InteractionTracker,
 ) {
     let visitor_score: f64 = agents[visitor].score;
     let host_score: f64 = agents[host].score;
@@ -253,6 +277,7 @@ fn game(
 
     match (visitor_strategy, host_strategy) {
         (Strategy::Hawk, Strategy::Hawk) => {
+            interaction_tracker.hawk_hawk += 1;
             if visitor_score > host_score {
                 agents[visitor].current_payoff = payoffs.win as f64;
                 agents[host].current_payoff = payoffs.lose as f64;
@@ -264,14 +289,17 @@ fn game(
         (Strategy::Hawk, Strategy::Dove) => {
             agents[visitor].current_payoff = payoffs.visitor[0][1] as f64;
             agents[host].current_payoff = payoffs.host[0][1] as f64;
+            interaction_tracker.hawk_dove += 1;
         }
         (Strategy::Dove, Strategy::Hawk) => {
             agents[visitor].current_payoff = payoffs.visitor[1][0] as f64;
             agents[host].current_payoff = payoffs.host[1][0] as f64;
+            interaction_tracker.dove_hawk += 1;
         }
         (Strategy::Dove, Strategy::Dove) => {
             agents[visitor].current_payoff = payoffs.visitor[1][1] as f64;
             agents[host].current_payoff = payoffs.host[1][1] as f64;
+            interaction_tracker.dove_dove += 1;
         }
         _ => unreachable!(),
     }
@@ -285,9 +313,13 @@ fn run_time_step(
     network: &mut Network,
     payoffs: &PayoffMap,
     dynamic_rank: bool,
+    seed: u64,
+    output_directory: &str,
 ) {
     let mut agent_seq: Vec<usize> = (0..pop).collect();
     agent_seq.shuffle(rng);
+
+    let mut interaction_tracker: InteractionTracker = InteractionTracker::new();
 
     for &id in &agent_seq {
         let temp_vec: Vec<usize> = agent_seq.iter().filter(|&&x| x != id).cloned().collect();
@@ -305,7 +337,14 @@ fn run_time_step(
             host.choose_strategy(rng, Role::Host);
         }
 
-        game(rng, AgentId(id as u32), host_id, agents, payoffs);
+        game(
+            rng,
+            AgentId(id as u32),
+            host_id,
+            agents,
+            payoffs,
+            &mut interaction_tracker,
+        );
 
         agents[id].add_network_payoff(network);
 
@@ -314,12 +353,22 @@ fn run_time_step(
     }
 
     if dynamic_rank {
-        if i+1 % 1000 == 0 {
+        if i % 1000 == 0 {
             for j in 0..pop {
                 agents[j].update_score();
             }
         }
     }
+
+    run_track_vars(
+        i,
+        pop,
+        agents,
+        network,
+        output_directory,
+        seed,
+        &interaction_tracker,
+    );
 }
 
 fn main() {
@@ -329,26 +378,53 @@ fn main() {
         panic!("Wrong arguments entered!")
     }
 
-    let source_file = args[0].clone();
+    let source_file = args[1].clone();
 
     let config: RootConfig = read_config_file(&source_file);
+
+    println!("{}", config.description);
 
     let seed = config.simulation.seed;
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     let max_time_step: u64 = config.simulation.max_time_step;
     let pop: u32 = config.simulation.population;
     let dynamic_rank: bool = config.simulation.dynamic_rank;
-    let _output_directory: String = config.simulation.output_directory;
+    let output_directory: String = config.simulation.output_directory;
 
     let mut agents: Vec<Agent> = Vec::new();
-    let mut network = Network(vec![vec![1.0/pop as f64; pop as usize]; pop as usize]);
+    let mut network = Network::new(pop as usize);
     let payoffs = PayoffMap::new(config.payoffs);
 
     for i in 0..pop {
-        agents.push(Agent::new(AgentId(i as u32), rng.random(), config.agent));
+        agents.push(Agent::new(
+            AgentId(i as u32),
+            rng.random(),
+            config.agent_parameters,
+        ));
     }
 
+    create_directories(&output_directory);
+    run_track_vars(
+        0 as u64,
+        pop as usize,
+        &agents,
+        &network,
+        &output_directory,
+        seed,
+        &InteractionTracker::default(pop as usize),
+    );
+
     for i in 1..=max_time_step {
-        run_time_step(i, &mut rng, &mut agents, pop as usize, &mut network, &payoffs, dynamic_rank);
+        run_time_step(
+            i,
+            &mut rng,
+            &mut agents,
+            pop as usize,
+            &mut network,
+            &payoffs,
+            dynamic_rank,
+            seed,
+            &output_directory,
+        );
     }
 }
