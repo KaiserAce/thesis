@@ -6,8 +6,24 @@ use serde::Deserialize;
 use std::error::Error;
 use std::fs::OpenOptions;
 use std::fs::create_dir;
+use std::collections::HashMap;
+use std::ops::{Index, IndexMut};
 
-use crate::{Agent, Network};
+use crate::{Agent, Network, AgentId};
+
+impl Index<AgentId> for Vec<AgentInteractionTracker> {
+    type Output = AgentInteractionTracker;
+
+    fn index(&self, index: AgentId) -> &Self::Output {
+        &self[index.0 as usize]
+    }
+}
+
+impl IndexMut<AgentId> for Vec<AgentInteractionTracker> {
+    fn index_mut(&mut self, index: AgentId) -> &mut Self::Output {
+        &mut self[index.0 as usize]
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct SimulationParameters {
@@ -51,6 +67,14 @@ pub struct InteractionTracker {
     pub dove_dove: u64,
 }
 
+#[derive(Clone, Copy)]
+pub struct AgentInteractionTracker {
+    pub hawk_hawk: u64,
+    pub hawk_dove: u64,
+    pub dove_hawk: u64,
+    pub dove_dove: u64,
+}
+
 impl RootConfig {
     fn new(source_file: &str) -> Result<Self, ConfigError> {
         let s = Config::builder()
@@ -76,6 +100,17 @@ impl InteractionTracker {
             hawk_dove: pop as u64 / 4,
             dove_hawk: pop as u64 / 4,
             dove_dove: pop as u64 / 4,
+        }
+    }
+}
+
+impl AgentInteractionTracker {
+    pub fn new() -> AgentInteractionTracker {
+        AgentInteractionTracker {
+            hawk_hawk: 0,
+            hawk_dove: 0,
+            dove_hawk: 0,
+            dove_dove: 0,
         }
     }
 }
@@ -277,6 +312,117 @@ pub fn generate_netstd_csv(
     Ok(())
 }
 
+pub fn generate_outscore_csv(
+    pop: usize,
+    agents: &Vec<Agent>,
+    output_directory: &str,
+    seed: u64,
+) -> Result<(), Box<dyn Error>> {
+    let filepath = format!("./Output/{}/OutScore_{}.csv", output_directory, seed);
+
+    let file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&filepath)?;
+
+    let mut writer = WriterBuilder::new().from_writer(file);
+    let mut scores: Vec<f64> = Vec::new();
+    for i in 0..pop {
+        scores.push(agents[i].score);
+    }
+
+    let mut indexed_data: Vec<(usize, &f64)> = scores.iter().enumerate().collect();
+    indexed_data.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut ranks: HashMap<usize, usize> = HashMap::new();
+    let mut rank = 1;
+
+    for i in 0..indexed_data.len() {
+        let (index, _) = indexed_data[i];
+        if i > 0 && indexed_data[i].1 != indexed_data[i-1].1 {
+            rank = i+1;
+        }
+        ranks.insert(index, rank);
+    }
+
+    let mut result = vec![0; scores.len()];
+
+    for (original_index, &_value) in scores.iter().enumerate() {
+        if let Some(&r) = ranks.get(&original_index) {
+            result[original_index] = r;
+        }
+    }
+
+    let string_vec: Vec<String> = result.iter().map(|x| x.to_string()).collect();
+
+    writer.write_record(string_vec)?;
+
+    Ok(())
+}
+
+pub fn generate_totalpayoff_csv(
+    pop: usize,
+    agents: &Vec<Agent>,
+    output_directory: &str,
+    seed: u64,
+) -> Result<(), Box<dyn Error>> {
+    let filepath = format!("./Output/{}/TotalPayoff_{}.csv", output_directory, seed);
+
+    let file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&filepath)?;
+
+    let mut writer = WriterBuilder::new().from_writer(file);
+
+    let mut payoff_vector: Vec<f64> = Vec::new();
+
+    for i in 0..pop {
+        payoff_vector.push(agents[i].total_payoff);
+    }
+
+    let string_vec: Vec<String> = payoff_vector.iter().map(|x| x.to_string()).collect();
+
+    writer.write_record(string_vec)?;
+
+    Ok(())
+}
+
+pub fn generate_totalinteractions_csv(
+    pop: usize,
+    agent_interaction_tracker: &Vec<AgentInteractionTracker>,
+    output_directory: &str,
+    seed: u64,
+) -> Result<(), Box<dyn Error>> {
+    let filepath = format!("./Output/{}/TotalInteractions_{}.csv", output_directory, seed);
+
+    let file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&filepath)?;
+
+    let mut writer = WriterBuilder::new().from_writer(file);
+
+    let mut interaction_vector: Vec<u64> = Vec::new();
+
+    for i in 0..pop {
+        let hawk_hawk = agent_interaction_tracker[i].hawk_hawk;
+        interaction_vector.push(hawk_hawk);
+        let hawk_dove = agent_interaction_tracker[i].hawk_dove;
+        interaction_vector.push(hawk_dove);
+        let dove_hawk = agent_interaction_tracker[i].dove_hawk;
+        interaction_vector.push(dove_hawk);
+        let dove_dove = agent_interaction_tracker[i].dove_dove;
+        interaction_vector.push(dove_dove);
+    }
+
+    let string_vec: Vec<String> = interaction_vector.iter().map(|x| x.to_string()).collect();
+
+    writer.write_record(string_vec)?;
+
+    Ok(())
+}
+
 pub fn run_track_vars(
     i: u64,
     pop: usize,
@@ -285,6 +431,7 @@ pub fn run_track_vars(
     output_directory: &str,
     seed: u64,
     interaction_tracker: &InteractionTracker,
+    agent_interaction_tracker: &Vec<AgentInteractionTracker>,
 ) {
     let rounds = vec![
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 400, 500, 600,
@@ -295,6 +442,7 @@ pub fn run_track_vars(
     if rounds.contains(&i) {
         let _ = generate_weights_csv(i, network, output_directory, seed);
         let _ = generate_scores_csv(agents, output_directory, seed);
+        let _ = generate_totalinteractions_csv(pop, agent_interaction_tracker, output_directory, seed);
     }
 
     let _ = generate_evostats_csv(i, pop, interaction_tracker, output_directory, seed);
@@ -303,4 +451,8 @@ pub fn run_track_vars(
     let _ = generate_strategyhost_csv(agents, output_directory, seed);
 
     let _ = generate_netstd_csv(pop, network, output_directory, seed);
+
+    let _ = generate_outscore_csv(pop, agents, output_directory, seed);
+
+    let _ = generate_totalpayoff_csv(pop, agents, output_directory, seed);
 }

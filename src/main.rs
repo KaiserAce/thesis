@@ -5,8 +5,7 @@ use rand_chacha::ChaCha8Rng;
 use std::env;
 use std::ops::{Index, IndexMut};
 use utils::{
-    AgentParameters, InteractionTracker, PayoffScores, RootConfig, create_directories,
-    read_config_file, run_track_vars,
+    create_directories, read_config_file, run_track_vars, AgentInteractionTracker, AgentParameters, InteractionTracker, PayoffScores, RootConfig
 };
 
 enum Role {
@@ -44,8 +43,7 @@ impl Index<AgentId> for Vec<Agent> {
     type Output = Agent;
     fn index(&self, index: AgentId) -> &Agent {
         &self[index.0 as usize]
-    }
-}
+    } }
 
 impl IndexMut<AgentId> for Vec<Agent> {
     fn index_mut(&mut self, index: AgentId) -> &mut Self::Output {
@@ -268,6 +266,7 @@ fn game(
     agents: &mut Vec<Agent>,
     payoffs: &PayoffMap,
     interaction_tracker: &mut InteractionTracker,
+    agent_interaction_tracker: &mut Vec<AgentInteractionTracker>,
 ) {
     let visitor_score: f64 = agents[visitor].score;
     let host_score: f64 = agents[host].score;
@@ -278,6 +277,8 @@ fn game(
     match (visitor_strategy, host_strategy) {
         (Strategy::Hawk, Strategy::Hawk) => {
             interaction_tracker.hawk_hawk += 1;
+            agent_interaction_tracker[visitor].hawk_hawk += 1;
+            agent_interaction_tracker[host].hawk_hawk += 1;
             if visitor_score > host_score {
                 agents[visitor].current_payoff = payoffs.win as f64;
                 agents[host].current_payoff = payoffs.lose as f64;
@@ -290,16 +291,22 @@ fn game(
             agents[visitor].current_payoff = payoffs.visitor[0][1] as f64;
             agents[host].current_payoff = payoffs.host[0][1] as f64;
             interaction_tracker.hawk_dove += 1;
+            agent_interaction_tracker[visitor].hawk_dove += 1;
+            agent_interaction_tracker[host].hawk_dove += 1;
         }
         (Strategy::Dove, Strategy::Hawk) => {
             agents[visitor].current_payoff = payoffs.visitor[1][0] as f64;
             agents[host].current_payoff = payoffs.host[1][0] as f64;
             interaction_tracker.dove_hawk += 1;
+            agent_interaction_tracker[visitor].dove_hawk += 1;
+            agent_interaction_tracker[host].dove_hawk += 1;
         }
         (Strategy::Dove, Strategy::Dove) => {
             agents[visitor].current_payoff = payoffs.visitor[1][1] as f64;
             agents[host].current_payoff = payoffs.host[1][1] as f64;
             interaction_tracker.dove_dove += 1;
+            agent_interaction_tracker[visitor].dove_dove += 1;
+            agent_interaction_tracker[host].dove_dove += 1;
         }
         _ => unreachable!(),
     }
@@ -315,6 +322,7 @@ fn run_time_step(
     dynamic_rank: bool,
     seed: u64,
     output_directory: &str,
+    agent_interaction_tracker: &mut Vec<AgentInteractionTracker>,
 ) {
     let mut agent_seq: Vec<usize> = (0..pop).collect();
     agent_seq.shuffle(rng);
@@ -344,6 +352,7 @@ fn run_time_step(
             agents,
             payoffs,
             &mut interaction_tracker,
+            agent_interaction_tracker,
         );
 
         agents[id].add_network_payoff(network);
@@ -368,6 +377,7 @@ fn run_time_step(
         output_directory,
         seed,
         &interaction_tracker,
+        agent_interaction_tracker,
     );
 }
 
@@ -394,6 +404,7 @@ fn main() {
     let mut agents: Vec<Agent> = Vec::new();
     let mut network = Network::new(pop as usize);
     let payoffs = PayoffMap::new(config.payoffs);
+    let mut agent_interaction_tracker: Vec<AgentInteractionTracker> = vec![AgentInteractionTracker::new(); pop as usize];
 
     for i in 0..pop {
         agents.push(Agent::new(
@@ -412,6 +423,7 @@ fn main() {
         &output_directory,
         seed,
         &InteractionTracker::default(pop as usize),
+        &agent_interaction_tracker,
     );
 
     for i in 1..=max_time_step {
@@ -425,6 +437,7 @@ fn main() {
             dynamic_rank,
             seed,
             &output_directory,
+            &mut agent_interaction_tracker,
         );
     }
 }
