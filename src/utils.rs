@@ -1,11 +1,12 @@
 use core::panic;
+use std::io;
 
 use config::{Config, ConfigError, File};
 use csv::WriterBuilder;
 use serde::Deserialize;
 use std::error::Error;
 use std::fs::OpenOptions;
-use std::fs::create_dir;
+use std::fs::{create_dir, remove_dir_all};
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 
@@ -122,6 +123,15 @@ pub fn read_config_file(source_file: &String) -> RootConfig {
             eprintln!("Error loading simulation parameters: {}", e);
             panic!("Failed to load simulation parameters");
         }
+    }
+}
+
+pub fn delete_directories(output_directory: &str) -> io::Result<()> {
+    let path = format!("./Output/{}", output_directory);
+    match remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(e),
     }
 }
 

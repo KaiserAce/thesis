@@ -1,11 +1,11 @@
 mod utils;
 
-use rand::prelude::*;
-use rand_chacha::ChaCha8Rng;
+use rand::{rng, Rng};
+use rand::prelude::{SliceRandom, IndexedRandom};
 use std::env;
 use std::ops::{Index, IndexMut};
 use utils::{
-    create_directories, read_config_file, run_track_vars, AgentInteractionTracker, AgentParameters, InteractionTracker, PayoffScores, RootConfig
+    create_directories, delete_directories, read_config_file, run_track_vars, AgentInteractionTracker, AgentParameters, InteractionTracker, PayoffScores, RootConfig
 };
 
 enum Role {
@@ -90,10 +90,10 @@ impl Agent {
 
     fn partner_pick(
         &mut self,
-        rng: &mut ChaCha8Rng,
         temp_vec: &[usize],
         network: &mut Network,
     ) -> AgentId {
+        let mut rng = rng();
         let mut friend_id: Option<usize> = None;
         let rand_tremble: f64 = rng.random();
 
@@ -106,7 +106,7 @@ impl Agent {
                 );
             }
 
-            let partner_id: AgentId = AgentId(*temp_vec.choose(rng).unwrap() as u32);
+            let partner_id: AgentId = AgentId(*temp_vec.choose(&mut rng).unwrap() as u32);
             self.current_partner = partner_id;
             partner_id
         } else {
@@ -133,13 +133,14 @@ impl Agent {
                 );
             }
             let partner_id: AgentId =
-                AgentId(friend_id.unwrap_or_else(|| *temp_vec.choose(rng).unwrap()) as u32);
+                AgentId(friend_id.unwrap_or_else(|| *temp_vec.choose(&mut rng).unwrap()) as u32);
             self.current_partner = partner_id;
             partner_id
         }
     }
 
-    fn choose_strategy(&mut self, rng: &mut ChaCha8Rng, role: Role) {
+    fn choose_strategy(&mut self, role: Role) {
+        let mut rng = rng();
         let tremble_draw: f64 = rng.random();
 
         if tremble_draw < self.agent_param.strat_tremble {
@@ -260,7 +261,6 @@ impl PayoffMap {
 }
 
 fn game(
-    _rng: &mut ChaCha8Rng,
     visitor: AgentId,
     host: AgentId,
     agents: &mut Vec<Agent>,
@@ -314,7 +314,6 @@ fn game(
 
 fn run_time_step(
     i: u64,
-    rng: &mut ChaCha8Rng,
     agents: &mut Vec<Agent>,
     pop: usize,
     network: &mut Network,
@@ -325,28 +324,28 @@ fn run_time_step(
     agent_interaction_tracker: &mut Vec<AgentInteractionTracker>,
 ) {
     let mut agent_seq: Vec<usize> = (0..pop).collect();
-    agent_seq.shuffle(rng);
+    let mut rng = rng();
+    agent_seq.shuffle(&mut rng);
 
     let mut interaction_tracker: InteractionTracker = InteractionTracker::new();
 
     for &id in &agent_seq {
         let temp_vec: Vec<usize> = agent_seq.iter().filter(|&&x| x != id).cloned().collect();
 
-        let host_id: AgentId = agents[id].partner_pick(rng, &temp_vec, network);
+        let host_id: AgentId = agents[id].partner_pick(&temp_vec, network);
 
         {
             let visitor = &mut agents[id];
-            visitor.choose_strategy(rng, Role::Visitor);
+            visitor.choose_strategy(Role::Visitor);
             visitor.current_partner = host_id;
         }
 
         {
             let host = &mut agents[host_id.0 as usize];
-            host.choose_strategy(rng, Role::Host);
+            host.choose_strategy(Role::Host);
         }
 
         game(
-            rng,
             AgentId(id as u32),
             host_id,
             agents,
@@ -395,11 +394,11 @@ fn main() {
     println!("{}", config.description);
 
     let seed = config.simulation.seed;
-    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let mut rng = rng();
     let max_time_step: u64 = config.simulation.max_time_step;
     let pop: u32 = config.simulation.population;
     let dynamic_rank: bool = config.simulation.dynamic_rank;
-    let output_directory: String = config.simulation.output_directory;
+    let output_directory: String = config.simulation.output_directory; 
 
     let mut agents: Vec<Agent> = Vec::new();
     let mut network = Network::new(pop as usize);
@@ -413,6 +412,8 @@ fn main() {
             config.agent_parameters,
         ));
     }
+
+    let _ = delete_directories(&output_directory);
 
     create_directories(&output_directory);
     run_track_vars(
@@ -429,7 +430,6 @@ fn main() {
     for i in 1..=max_time_step {
         run_time_step(
             i,
-            &mut rng,
             &mut agents,
             pop as usize,
             &mut network,
