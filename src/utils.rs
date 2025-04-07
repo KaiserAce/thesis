@@ -4,9 +4,10 @@ use std::io;
 use config::{Config, ConfigError, File};
 use csv::WriterBuilder;
 use serde::Deserialize;
+use walkdir::WalkDir;
 use std::error::Error;
 use std::fs::OpenOptions;
-use std::fs::{create_dir, remove_dir_all};
+use std::fs::{create_dir_all, remove_dir_all};
 use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
 
@@ -28,7 +29,7 @@ impl IndexMut<AgentId> for Vec<AgentInteractionTracker> {
 
 #[derive(Debug, Deserialize)]
 pub struct SimulationParameters {
-    pub seed: u64,
+    pub seeds: u64,
     pub max_time_step: u64,
     pub population: u32,
     pub dynamic_rank: bool,
@@ -116,6 +117,18 @@ impl AgentInteractionTracker {
     }
 }
 
+pub fn get_config_files(path: &str) -> Vec<String> {
+
+    let full_path = format!("Input/{}", path);
+
+    WalkDir::new(full_path)
+    .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect()
+}
+
 pub fn read_config_file(source_file: &String) -> RootConfig {
     match RootConfig::new(source_file) {
         Ok(config) => config,
@@ -137,7 +150,7 @@ pub fn delete_directories(output_directory: &str) -> io::Result<()> {
 
 pub fn create_directories(output_directory: &str) {
     let path = format!("./Output/{}", output_directory);
-    match create_dir(path) {
+    match create_dir_all(path) {
         Ok(()) => {
             println!("Directory made!");
         }

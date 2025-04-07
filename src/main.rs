@@ -1,11 +1,13 @@
 mod utils;
+mod data;
 
+use data::test_figure;
 use rand::{rng, Rng};
 use rand::prelude::{SliceRandom, IndexedRandom};
 use std::env;
 use std::ops::{Index, IndexMut};
 use utils::{
-    create_directories, delete_directories, read_config_file, run_track_vars, AgentInteractionTracker, AgentParameters, InteractionTracker, PayoffScores, RootConfig
+    get_config_files, create_directories, delete_directories, read_config_file, run_track_vars, AgentInteractionTracker, AgentParameters, InteractionTracker, PayoffScores, RootConfig
 };
 
 enum Role {
@@ -380,6 +382,62 @@ fn run_time_step(
     );
 }
 
+fn run_config_file(config: RootConfig, out_path: &str) {
+    let seeds = config.simulation.seeds;
+    let mut rng = rng();
+    let max_time_step: u64 = config.simulation.max_time_step;
+    let pop: u32 = config.simulation.population;
+    let dynamic_rank: bool = config.simulation.dynamic_rank;
+    let output_directory: String = config.simulation.output_directory; 
+
+    let payoffs = PayoffMap::new(config.payoffs);
+
+    let work_direc = format!("{}/{}", out_path, output_directory);
+
+    let _ = delete_directories(&work_direc);
+    create_directories(&work_direc);
+
+    for seed in 0..seeds {
+
+        let mut agents: Vec<Agent> = Vec::new();
+        let mut network = Network::new(pop as usize);
+        let mut agent_interaction_tracker: Vec<AgentInteractionTracker> = vec![AgentInteractionTracker::new(); pop as usize];
+
+        for i in 0..pop {
+            agents.push(Agent::new(
+                AgentId(i as u32),
+                rng.random(),
+                config.agent_parameters,
+            ));
+        }
+
+        run_track_vars(
+            0 as u64,
+            pop as usize,
+            &agents,
+            &network,
+            &work_direc,
+            seed,
+            &InteractionTracker::default(pop as usize),
+            &agent_interaction_tracker,
+        );
+
+        for i in 1..=max_time_step {
+            run_time_step(
+                i,
+                &mut agents,
+                pop as usize,
+                &mut network,
+                &payoffs,
+                dynamic_rank,
+                seed,
+                &work_direc,
+                &mut agent_interaction_tracker,
+            );
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -387,57 +445,20 @@ fn main() {
         panic!("Wrong arguments entered!")
     }
 
-    let source_file = args[1].clone();
+    let path = get_config_files(&args[1]);
 
-    let config: RootConfig = read_config_file(&source_file);
+    for file in path {
 
-    println!("{}", config.description);
+        println!("{}", file);
 
-    let seed = config.simulation.seed;
-    let mut rng = rng();
-    let max_time_step: u64 = config.simulation.max_time_step;
-    let pop: u32 = config.simulation.population;
-    let dynamic_rank: bool = config.simulation.dynamic_rank;
-    let output_directory: String = config.simulation.output_directory; 
+        let config: RootConfig = read_config_file(&format!("/{}/{}", &args[1], &file));
 
-    let mut agents: Vec<Agent> = Vec::new();
-    let mut network = Network::new(pop as usize);
-    let payoffs = PayoffMap::new(config.payoffs);
-    let mut agent_interaction_tracker: Vec<AgentInteractionTracker> = vec![AgentInteractionTracker::new(); pop as usize];
+        println!("{}", config.description);
 
-    for i in 0..pop {
-        agents.push(Agent::new(
-            AgentId(i as u32),
-            rng.random(),
-            config.agent_parameters,
-        ));
+        run_config_file(config, &args[1]);
+
     }
 
-    let _ = delete_directories(&output_directory);
+    let _ = test_figure();
 
-    create_directories(&output_directory);
-    run_track_vars(
-        0 as u64,
-        pop as usize,
-        &agents,
-        &network,
-        &output_directory,
-        seed,
-        &InteractionTracker::default(pop as usize),
-        &agent_interaction_tracker,
-    );
-
-    for i in 1..=max_time_step {
-        run_time_step(
-            i,
-            &mut agents,
-            pop as usize,
-            &mut network,
-            &payoffs,
-            dynamic_rank,
-            seed,
-            &output_directory,
-            &mut agent_interaction_tracker,
-        );
-    }
 }
