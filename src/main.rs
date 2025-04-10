@@ -1,13 +1,15 @@
-mod utils;
 mod data;
+mod utils;
 
-use data::test_figure;
-use rand::{rng, Rng};
-use rand::prelude::{SliceRandom, IndexedRandom};
+use data::{figure_2b, figure_3a, figure_3b, test_figure};
+use rand::prelude::{IndexedRandom, SliceRandom};
+use rand::{Rng, rng};
+use rayon::prelude::*;
 use std::env;
 use std::ops::{Index, IndexMut};
 use utils::{
-    get_config_files, create_directories, delete_directories, read_config_file, run_track_vars, AgentInteractionTracker, AgentParameters, InteractionTracker, PayoffScores, RootConfig
+    AgentInteractionTracker, AgentParameters, InteractionTracker, PayoffScores, RootConfig,
+    create_directories, delete_directories, get_config_files, read_config_file, run_track_vars,
 };
 
 enum Role {
@@ -45,7 +47,8 @@ impl Index<AgentId> for Vec<Agent> {
     type Output = Agent;
     fn index(&self, index: AgentId) -> &Agent {
         &self[index.0 as usize]
-    } }
+    }
+}
 
 impl IndexMut<AgentId> for Vec<Agent> {
     fn index_mut(&mut self, index: AgentId) -> &mut Self::Output {
@@ -90,11 +93,7 @@ impl Agent {
         }
     }
 
-    fn partner_pick(
-        &mut self,
-        temp_vec: &[usize],
-        network: &mut Network,
-    ) -> AgentId {
+    fn partner_pick(&mut self, temp_vec: &[usize], network: &mut Network) -> AgentId {
         let mut rng = rng();
         let mut friend_id: Option<usize> = None;
         let rand_tremble: f64 = rng.random();
@@ -214,9 +213,43 @@ impl Agent {
         self.total_payoff += self.current_payoff
     }
 
+    fn normalize_strategy_weights(&mut self, role: Role) {
+        match role {
+            Role::Host => {
+                let sum: f64 = self.strategy.host.iter().sum();
+
+                if sum > 0.0 {
+                    for weight in self.strategy.host.iter_mut() {
+                        *weight /= sum;
+                    }
+                } else {
+                    let len = self.strategy.host.len();
+                    for weight in self.strategy.host.iter_mut() {
+                        *weight = 1.0 / len as f64;
+                    }
+                }
+            },
+            Role::Visitor => {
+                let sum: f64 = self.strategy.visit.iter().sum();
+
+                if sum > 0.0 {
+                    for weight in self.strategy.visit.iter_mut() {
+                        *weight /= sum;
+                    }
+                } else {
+                    let len = self.strategy.visit.len();
+                    for weight in self.strategy.visit.iter_mut() {
+                        *weight = 1.0 / len as f64;
+                    }
+                }
+            },
+        }
+    }
+
     fn update_score(&mut self) {
         self.score = self.total_payoff;
     }
+
 }
 
 impl StratVector {
@@ -248,6 +281,14 @@ impl Network {
 
     fn discount_weight(&mut self, agent_id: AgentId, partner_id: AgentId, net_discount: f64) {
         self.0[agent_id.0 as usize][partner_id.0 as usize] *= 1.0 - net_discount;
+    }
+
+    fn normalize_network_weights(&mut self, agent_id: AgentId) {
+        let sum: f64 = self[agent_id].iter().sum();
+
+        for weight in self[agent_id].iter_mut(){
+            *weight /= sum;
+        }
     }
 }
 
@@ -360,6 +401,11 @@ fn run_time_step(
 
         agents[id].add_strategy_payoff(Role::Visitor);
         agents[host_id].add_strategy_payoff(Role::Host);
+
+        agents[id].normalize_strategy_weights(Role::Visitor);
+        agents[host_id].normalize_strategy_weights(Role::Host);
+
+        network.normalize_network_weights(AgentId(id as u32));
     }
 
     if dynamic_rank {
@@ -388,7 +434,7 @@ fn run_config_file(config: RootConfig, out_path: &str) {
     let max_time_step: u64 = config.simulation.max_time_step;
     let pop: u32 = config.simulation.population;
     let dynamic_rank: bool = config.simulation.dynamic_rank;
-    let output_directory: String = config.simulation.output_directory; 
+    let output_directory: String = config.simulation.output_directory;
 
     let payoffs = PayoffMap::new(config.payoffs);
 
@@ -398,10 +444,10 @@ fn run_config_file(config: RootConfig, out_path: &str) {
     create_directories(&work_direc);
 
     for seed in 0..seeds {
-
         let mut agents: Vec<Agent> = Vec::new();
         let mut network = Network::new(pop as usize);
-        let mut agent_interaction_tracker: Vec<AgentInteractionTracker> = vec![AgentInteractionTracker::new(); pop as usize];
+        let mut agent_interaction_tracker: Vec<AgentInteractionTracker> =
+            vec![AgentInteractionTracker::new(); pop as usize];
 
         for i in 0..pop {
             agents.push(Agent::new(
@@ -447,18 +493,16 @@ fn main() {
 
     let path = get_config_files(&args[1]);
 
-    for file in path {
-
-        println!("{}", file);
-
+    path.par_iter().for_each(|file| {
+        print!("{}", file);
         let config: RootConfig = read_config_file(&format!("/{}/{}", &args[1], &file));
-
         println!("{}", config.description);
-
         run_config_file(config, &args[1]);
+    });
 
-    }
+    // let _ = figure_2b();
+    // let _ = figure_3a();
 
-    let _ = test_figure();
+    // println!("{:?}", figure_3b());
 
 }

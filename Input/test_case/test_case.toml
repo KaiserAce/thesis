@@ -1,7 +1,7 @@
 description = "Test Parameters for Base Model"
 
 [simulation]
-seeds = 4
+seeds = 1
 max_time_step = 100
 population = 10
 dynamic_rank = true

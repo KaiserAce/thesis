@@ -4,14 +4,14 @@ use std::io;
 use config::{Config, ConfigError, File};
 use csv::WriterBuilder;
 use serde::Deserialize;
-use walkdir::WalkDir;
+use std::collections::HashMap;
 use std::error::Error;
 use std::fs::OpenOptions;
 use std::fs::{create_dir_all, remove_dir_all};
-use std::collections::HashMap;
 use std::ops::{Index, IndexMut};
+use walkdir::WalkDir;
 
-use crate::{Agent, Network, AgentId};
+use crate::{Agent, AgentId, Network};
 
 impl Index<AgentId> for Vec<AgentInteractionTracker> {
     type Output = AgentInteractionTracker;
@@ -118,11 +118,10 @@ impl AgentInteractionTracker {
 }
 
 pub fn get_config_files(path: &str) -> Vec<String> {
-
     let full_path = format!("Input/{}", path);
 
     WalkDir::new(full_path)
-    .into_iter()
+        .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.file_type().is_file())
         .map(|e| e.file_name().to_string_lossy().into_owned())
@@ -151,9 +150,7 @@ pub fn delete_directories(output_directory: &str) -> io::Result<()> {
 pub fn create_directories(output_directory: &str) {
     let path = format!("./Output/{}", output_directory);
     match create_dir_all(path) {
-        Ok(()) => {
-            println!("Directory made!");
-        }
+        Ok(()) => {}
         Err(e) => {
             eprintln!("Error making directory: {}", e);
         }
@@ -175,10 +172,11 @@ pub fn generate_weights_csv(
 
     let mut writer = WriterBuilder::new().from_writer(file);
 
-    let linear_vec: Vec<f64> = network
+    let linear_vec: Vec<f32> = network
         .0
         .iter()
         .flat_map(|row| row.iter().cloned())
+        .map(|x| x as f32)
         .collect();
 
     let mut string_vec: Vec<String> = linear_vec.iter().map(|x| x.to_string()).collect();
@@ -243,7 +241,7 @@ pub fn generate_strategyvisit_csv(
         visit_vector.push(agents[i].strategy.visit[1]);
     }
 
-    let string_vec: Vec<String> = visit_vector.iter().map(|x| x.to_string()).collect();
+    let string_vec: Vec<String> = visit_vector.iter().map(|x| *x as f32).map(|x| x.to_string()).collect();
 
     writer.write_record(string_vec)?;
 
@@ -271,7 +269,7 @@ pub fn generate_strategyhost_csv(
         host_vector.push(agents[i].strategy.host[1]);
     }
 
-    let string_vec: Vec<String> = host_vector.iter().map(|x| x.to_string()).collect();
+    let string_vec: Vec<String> = host_vector.iter().map(|x| *x as f32).map(|x| x.to_string()).collect();
 
     writer.write_record(string_vec)?;
 
@@ -298,7 +296,7 @@ pub fn generate_scores_csv(
         scores_vector.push(agents[i].score);
     }
 
-    let string_vec: Vec<String> = scores_vector.iter().map(|x| x.to_string()).collect();
+    let string_vec: Vec<String> = scores_vector.iter().map(|x| *x as f32).map(|x| x.to_string()).collect();
 
     writer.write_record(string_vec)?;
 
@@ -328,7 +326,7 @@ pub fn generate_netstd_csv(
         }
     }
 
-    let string_vec: Vec<String> = column_sums.iter().map(|x| x.to_string()).collect();
+    let string_vec: Vec<String> = column_sums.iter().map(|x| *x as f32).map(|x| x.to_string()).collect();
 
     writer.write_record(string_vec)?;
 
@@ -362,8 +360,8 @@ pub fn generate_outscore_csv(
 
     for i in 0..indexed_data.len() {
         let (index, _) = indexed_data[i];
-        if i > 0 && indexed_data[i].1 != indexed_data[i-1].1 {
-            rank = i+1;
+        if i > 0 && indexed_data[i].1 != indexed_data[i - 1].1 {
+            rank = i + 1;
         }
         ranks.insert(index, rank);
     }
@@ -404,7 +402,7 @@ pub fn generate_totalpayoff_csv(
         payoff_vector.push(agents[i].total_payoff);
     }
 
-    let string_vec: Vec<String> = payoff_vector.iter().map(|x| x.to_string()).collect();
+    let string_vec: Vec<String> = payoff_vector.iter().map(|x| *x as f32).map(|x| x.to_string()).collect();
 
     writer.write_record(string_vec)?;
 
@@ -417,7 +415,10 @@ pub fn generate_totalinteractions_csv(
     output_directory: &str,
     seed: u64,
 ) -> Result<(), Box<dyn Error>> {
-    let filepath = format!("./Output/{}/TotalInteractions_{}.csv", output_directory, seed);
+    let filepath = format!(
+        "./Output/{}/TotalInteractions_{}.csv",
+        output_directory, seed
+    );
 
     let file = OpenOptions::new()
         .append(true)
@@ -465,7 +466,8 @@ pub fn run_track_vars(
     if rounds.contains(&i) {
         let _ = generate_weights_csv(i, network, output_directory, seed);
         let _ = generate_scores_csv(agents, output_directory, seed);
-        let _ = generate_totalinteractions_csv(pop, agent_interaction_tracker, output_directory, seed);
+        let _ =
+            generate_totalinteractions_csv(pop, agent_interaction_tracker, output_directory, seed);
     }
 
     let _ = generate_evostats_csv(i, pop, interaction_tracker, output_directory, seed);

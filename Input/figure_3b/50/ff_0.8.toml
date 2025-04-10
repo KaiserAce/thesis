@@ -1,17 +1,17 @@
-description = "Figure 2b ff=0.5"
+description = "Figure 2b ff=0.8"
 
 [simulation]
 seeds = 1
 max_time_step = 100000
-population = 20
+population = 50
 dynamic_rank = false
-output_directory = "ff_0.5.toml"
+output_directory = "ff_0.8"
 
 [agent_parameters]
 strat_learning_speed = 0.01
-net_learning_speed = 0.0
+net_learning_speed = 0.01
 strat_discount = 0.01
-net_discount = 0.0
+net_discount = 0.01
 strat_tremble = 0.01
 net_tremble = 0.01
 
@@ -19,4 +19,4 @@ net_tremble = 0.01
 hd = 1.0
 dh = 0.4
 dd = 0.6
-hh_f = 0.5
+hh_f = 0.8
