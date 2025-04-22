@@ -255,8 +255,8 @@ impl Agent {
 impl StratVector {
     fn new() -> StratVector {
         StratVector {
-            visit: [0.5, 0.5],
-            host: [0.5, 0.5],
+            visit: [1.0, 1.0],
+            host: [1.0, 1.0],
         }
     }
 
@@ -365,6 +365,7 @@ fn run_time_step(
     seed: u64,
     output_directory: &str,
     agent_interaction_tracker: &mut Vec<AgentInteractionTracker>,
+    config: &RootConfig,
 ) {
     let mut agent_seq: Vec<usize> = (0..pop).collect();
     let mut rng = rng();
@@ -402,8 +403,8 @@ fn run_time_step(
         agents[id].add_strategy_payoff(Role::Visitor);
         agents[host_id].add_strategy_payoff(Role::Host);
 
-        agents[id].normalize_strategy_weights(Role::Visitor);
-        agents[host_id].normalize_strategy_weights(Role::Host);
+        // agents[id].normalize_strategy_weights(Role::Visitor);
+        // agents[host_id].normalize_strategy_weights(Role::Host);
 
         network.normalize_network_weights(AgentId(id as u32));
     }
@@ -425,16 +426,17 @@ fn run_time_step(
         seed,
         &interaction_tracker,
         agent_interaction_tracker,
+        config,
     );
 }
 
-fn run_config_file(config: RootConfig, out_path: &str) {
+fn run_config_file(config: &RootConfig, out_path: &str) {
     let seeds = config.simulation.seeds;
     let mut rng = rng();
     let max_time_step: u64 = config.simulation.max_time_step;
     let pop: u32 = config.simulation.population;
     let dynamic_rank: bool = config.simulation.dynamic_rank;
-    let output_directory: String = config.simulation.output_directory;
+    let output_directory: String = config.simulation.output_directory.clone();
 
     let payoffs = PayoffMap::new(config.payoffs);
 
@@ -466,6 +468,7 @@ fn run_config_file(config: RootConfig, out_path: &str) {
             seed,
             &InteractionTracker::default(pop as usize),
             &agent_interaction_tracker,
+            config,
         );
 
         for i in 1..=max_time_step {
@@ -479,6 +482,7 @@ fn run_config_file(config: RootConfig, out_path: &str) {
                 seed,
                 &work_direc,
                 &mut agent_interaction_tracker,
+                config,
             );
         }
     }
@@ -497,10 +501,11 @@ fn main() {
         print!("{}", file);
         let config: RootConfig = read_config_file(&format!("/{}/{}", &args[1], &file));
         println!("{}", config.description);
-        run_config_file(config, &args[1]);
+        run_config_file(&config, &args[1]);
     });
 
-    // let _ = figure_2b();
+    let err = figure_2b();
+    println!("{:?}", err);
     // let _ = figure_3a();
 
     // println!("{:?}", figure_3b());

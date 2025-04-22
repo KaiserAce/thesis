@@ -27,7 +27,7 @@ impl IndexMut<AgentId> for Vec<AgentInteractionTracker> {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct SimulationParameters {
     pub seeds: u64,
     pub max_time_step: u64,
@@ -46,7 +46,7 @@ pub struct AgentParameters {
     pub net_tremble: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone, Copy)]
 pub struct PayoffScores {
     pub hd: f32,
     pub dh: f32,
@@ -55,11 +55,25 @@ pub struct PayoffScores {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct CSVFiles {
+    pub weights: bool,
+    pub scores: bool,
+    pub totalinteractions: bool,
+    pub evostats: bool,
+    pub strategyvisit: bool,
+    pub strategyhost: bool,
+    pub netstd: bool,
+    pub outscore: bool,
+    pub totalpayoff: bool,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct RootConfig {
     pub description: String,
     pub simulation: SimulationParameters,
     pub agent_parameters: AgentParameters,
     pub payoffs: PayoffScores,
+    pub csv: CSVFiles,
 }
 
 pub struct InteractionTracker {
@@ -237,8 +251,9 @@ pub fn generate_strategyvisit_csv(
     let mut visit_vector: Vec<f64> = Vec::new();
 
     for i in 0..agents.len() {
-        visit_vector.push(agents[i].strategy.visit[0]);
-        visit_vector.push(agents[i].strategy.visit[1]);
+        let sum = agents[i].strategy.visit[0] + agents[i].strategy.visit[1];
+        visit_vector.push(agents[i].strategy.visit[0] / sum);
+        visit_vector.push(agents[i].strategy.visit[1] / sum);
     }
 
     let string_vec: Vec<String> = visit_vector.iter().map(|x| *x as f32).map(|x| x.to_string()).collect();
@@ -265,8 +280,9 @@ pub fn generate_strategyhost_csv(
     let mut host_vector: Vec<f64> = Vec::new();
 
     for i in 0..agents.len() {
-        host_vector.push(agents[i].strategy.host[0]);
-        host_vector.push(agents[i].strategy.host[1]);
+        let sum = agents[i].strategy.host[0] + agents[i].strategy.host[1];
+        host_vector.push(agents[i].strategy.host[0] / sum);
+        host_vector.push(agents[i].strategy.host[1] / sum);
     }
 
     let string_vec: Vec<String> = host_vector.iter().map(|x| *x as f32).map(|x| x.to_string()).collect();
@@ -456,6 +472,7 @@ pub fn run_track_vars(
     seed: u64,
     interaction_tracker: &InteractionTracker,
     agent_interaction_tracker: &Vec<AgentInteractionTracker>,
+    config: &RootConfig,
 ) {
     let rounds = vec![
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 400, 500, 600,
@@ -464,20 +481,41 @@ pub fn run_track_vars(
     ];
 
     if rounds.contains(&i) {
-        let _ = generate_weights_csv(i, network, output_directory, seed);
-        let _ = generate_scores_csv(agents, output_directory, seed);
-        let _ =
-            generate_totalinteractions_csv(pop, agent_interaction_tracker, output_directory, seed);
+        if config.csv.weights {
+            let _ = generate_weights_csv(i, network, output_directory, seed);
+        }
+
+        if config.csv.scores {
+            let _ = generate_scores_csv(agents, output_directory, seed);
+        }
+
+        if config.csv.totalinteractions {
+            let _ =
+                generate_totalinteractions_csv(pop, agent_interaction_tracker, output_directory, seed);
+        }
+    }
+    
+    if config.csv.evostats {
+        let _ = generate_evostats_csv(i, pop, interaction_tracker, output_directory, seed);
     }
 
-    let _ = generate_evostats_csv(i, pop, interaction_tracker, output_directory, seed);
+    if config.csv.strategyvisit {
+        let _ = generate_strategyvisit_csv(agents, output_directory, seed);
+    }
 
-    let _ = generate_strategyvisit_csv(agents, output_directory, seed);
-    let _ = generate_strategyhost_csv(agents, output_directory, seed);
+    if config.csv.strategyhost {
+        let _ = generate_strategyhost_csv(agents, output_directory, seed);
+    }
 
-    let _ = generate_netstd_csv(pop, network, output_directory, seed);
+    if config.csv.netstd {
+        let _ = generate_netstd_csv(pop, network, output_directory, seed);
+    }
 
-    let _ = generate_outscore_csv(pop, agents, output_directory, seed);
+    if config.csv.outscore {
+        let _ = generate_outscore_csv(pop, agents, output_directory, seed);
+    }
 
-    let _ = generate_totalpayoff_csv(pop, agents, output_directory, seed);
+    if config.csv.totalpayoff {
+        let _ = generate_totalpayoff_csv(pop, agents, output_directory, seed);
+    }
 }

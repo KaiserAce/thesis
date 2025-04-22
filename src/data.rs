@@ -97,15 +97,15 @@ pub fn figure_2b() -> Result<(), Box<dyn std::error::Error>> {
 
     for file in ff {
         let out_score = File::open(format!(
-            "Output/figure_2b_static_net/ff_{}/OutScore_0.csv",
+            "Output/figure_2b/ff_{}/OutScore_0.csv",
             file
         ))?;
         let strategy_host = File::open(format!(
-            "Output/figure_2b_static_net/ff_{}/StrategyHost_0.csv",
+            "Output/figure_2b/ff_{}/StrategyHost_0.csv",
             file
         ))?;
         let strategy_visit = File::open(format!(
-            "Output/figure_2b_static_net/ff_{}/StrategyVisit_0.csv",
+            "Output/figure_2b/ff_{}/StrategyVisit_0.csv",
             file
         ))?;
 
