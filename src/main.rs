@@ -73,8 +73,10 @@ struct StratVector {
 }
 
 struct PayoffMap {
-    host: Vec<Vec<f32>>,
-    visitor: Vec<Vec<f32>>,
+    hh: f32,
+    hd: f32,
+    dh: f32,
+    dd: f32,
     win: f32,
     lose: f32,
 }
@@ -295,8 +297,10 @@ impl Network {
 impl PayoffMap {
     fn new(payoff: PayoffScores) -> PayoffMap {
         PayoffMap {
-            host: vec![[0.0, payoff.dh].to_vec(), [1.0, payoff.dd].to_vec()],
-            visitor: vec![[0.0, payoff.hd].to_vec(), [0.4, payoff.dd].to_vec()],
+            hh: 0.0,
+            hd: payoff.hd,
+            dh: payoff.dh,
+            dd: payoff.dd,
             win: payoff.hh_f,
             lose: payoff.hh_f / 3.0,
         }
@@ -331,22 +335,22 @@ fn game(
             }
         }
         (Strategy::Hawk, Strategy::Dove) => {
-            agents[visitor].current_payoff = payoffs.visitor[0][1] as f64;
-            agents[host].current_payoff = payoffs.host[0][1] as f64;
+            agents[visitor].current_payoff = payoffs.hd as f64;
+            agents[host].current_payoff = payoffs.dh as f64;
             interaction_tracker.hawk_dove += 1;
             agent_interaction_tracker[visitor].hawk_dove += 1;
             agent_interaction_tracker[host].hawk_dove += 1;
         }
         (Strategy::Dove, Strategy::Hawk) => {
-            agents[visitor].current_payoff = payoffs.visitor[1][0] as f64;
-            agents[host].current_payoff = payoffs.host[1][0] as f64;
+            agents[visitor].current_payoff = payoffs.dh as f64;
+            agents[host].current_payoff = payoffs.hd as f64;
             interaction_tracker.dove_hawk += 1;
             agent_interaction_tracker[visitor].dove_hawk += 1;
             agent_interaction_tracker[host].dove_hawk += 1;
         }
         (Strategy::Dove, Strategy::Dove) => {
-            agents[visitor].current_payoff = payoffs.visitor[1][1] as f64;
-            agents[host].current_payoff = payoffs.host[1][1] as f64;
+            agents[visitor].current_payoff = payoffs.dd as f64;
+            agents[host].current_payoff = payoffs.dd as f64;
             interaction_tracker.dove_dove += 1;
             agent_interaction_tracker[visitor].dove_dove += 1;
             agent_interaction_tracker[host].dove_dove += 1;
