@@ -51,6 +51,10 @@ pub struct PayoffScores {
     pub hd: f32,
     pub dh: f32,
     pub dd: f32,
+    pub fh: f32,
+    pub hf: f32,
+    pub fd: f32,
+    pub df: f32,
     pub hh_f: f32,
 }
 
@@ -65,6 +69,8 @@ pub struct CSVFiles {
     pub netstd: bool,
     pub outscore: bool,
     pub totalpayoff: bool,
+    pub foxusage: bool,
+    pub morality: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -81,6 +87,8 @@ pub struct InteractionTracker {
     pub hawk_dove: u64,
     pub dove_hawk: u64,
     pub dove_dove: u64,
+    pub fox_hawk: u64,
+    pub fox_dove: u64,
 }
 
 #[derive(Clone, Copy)]
@@ -89,6 +97,9 @@ pub struct AgentInteractionTracker {
     pub hawk_dove: u64,
     pub dove_hawk: u64,
     pub dove_dove: u64,
+    pub fox_hawk: u64,
+    pub fox_dove: u64,
+    pub fox_this_round: bool,
 }
 
 impl RootConfig {
@@ -107,15 +118,19 @@ impl InteractionTracker {
             hawk_dove: 0,
             dove_hawk: 0,
             dove_dove: 0,
+            fox_hawk: 0,
+            fox_dove: 0,
         }
     }
 
     pub fn default(pop: usize) -> InteractionTracker {
         InteractionTracker {
-            hawk_hawk: pop as u64 / 4,
-            hawk_dove: pop as u64 / 4,
-            dove_hawk: pop as u64 / 4,
-            dove_dove: pop as u64 / 4,
+            hawk_hawk: pop as u64 / 6,
+            hawk_dove: pop as u64 / 6,
+            dove_hawk: pop as u64 / 6,
+            dove_dove: pop as u64 / 6,
+            fox_hawk: pop as u64 / 6,
+            fox_dove: pop as u64 / 6,
         }
     }
 }
@@ -127,6 +142,9 @@ impl AgentInteractionTracker {
             hawk_dove: 0,
             dove_hawk: 0,
             dove_dove: 0,
+            fox_hawk: 0,
+            fox_dove: 0,
+            fox_this_round: false,
         }
     }
 }
@@ -228,6 +246,10 @@ pub fn generate_evostats_csv(
     strat_stats.push(dove_hawk);
     let dove_dove = (interaction_tracker.dove_dove as f64 / pop as f64).to_string();
     strat_stats.push(dove_dove);
+    let fox_hawk = (interaction_tracker.fox_hawk as f64 / pop as f64).to_string();
+    strat_stats.push(fox_hawk);
+    let fox_dove = (interaction_tracker.fox_dove as f64 / pop as f64).to_string();
+    strat_stats.push(fox_dove);
 
     writer.write_record(&strat_stats)?;
 
@@ -251,12 +273,18 @@ pub fn generate_strategyvisit_csv(
     let mut visit_vector: Vec<f64> = Vec::new();
 
     for i in 0..agents.len() {
-        let sum = agents[i].strategy.visit[0] + agents[i].strategy.visit[1];
+        let sum =
+            agents[i].strategy.visit[0] + agents[i].strategy.visit[1] + agents[i].strategy.visit[2];
         visit_vector.push(agents[i].strategy.visit[0] / sum);
         visit_vector.push(agents[i].strategy.visit[1] / sum);
+        visit_vector.push(agents[i].strategy.visit[2] / sum);
     }
 
-    let string_vec: Vec<String> = visit_vector.iter().map(|x| *x as f32).map(|x| x.to_string()).collect();
+    let string_vec: Vec<String> = visit_vector
+        .iter()
+        .map(|x| *x as f32)
+        .map(|x| x.to_string())
+        .collect();
 
     writer.write_record(string_vec)?;
 
@@ -285,7 +313,11 @@ pub fn generate_strategyhost_csv(
         host_vector.push(agents[i].strategy.host[1] / sum);
     }
 
-    let string_vec: Vec<String> = host_vector.iter().map(|x| *x as f32).map(|x| x.to_string()).collect();
+    let string_vec: Vec<String> = host_vector
+        .iter()
+        .map(|x| *x as f32)
+        .map(|x| x.to_string())
+        .collect();
 
     writer.write_record(string_vec)?;
 
@@ -312,7 +344,11 @@ pub fn generate_scores_csv(
         scores_vector.push(agents[i].score);
     }
 
-    let string_vec: Vec<String> = scores_vector.iter().map(|x| *x as f32).map(|x| x.to_string()).collect();
+    let string_vec: Vec<String> = scores_vector
+        .iter()
+        .map(|x| *x as f32)
+        .map(|x| x.to_string())
+        .collect();
 
     writer.write_record(string_vec)?;
 
@@ -342,7 +378,11 @@ pub fn generate_netstd_csv(
         }
     }
 
-    let string_vec: Vec<String> = column_sums.iter().map(|x| *x as f32).map(|x| x.to_string()).collect();
+    let string_vec: Vec<String> = column_sums
+        .iter()
+        .map(|x| *x as f32)
+        .map(|x| x.to_string())
+        .collect();
 
     writer.write_record(string_vec)?;
 
@@ -418,7 +458,11 @@ pub fn generate_totalpayoff_csv(
         payoff_vector.push(agents[i].total_payoff);
     }
 
-    let string_vec: Vec<String> = payoff_vector.iter().map(|x| *x as f32).map(|x| x.to_string()).collect();
+    let string_vec: Vec<String> = payoff_vector
+        .iter()
+        .map(|x| *x as f32)
+        .map(|x| x.to_string())
+        .collect();
 
     writer.write_record(string_vec)?;
 
@@ -454,9 +498,74 @@ pub fn generate_totalinteractions_csv(
         interaction_vector.push(dove_hawk);
         let dove_dove = agent_interaction_tracker[i].dove_dove;
         interaction_vector.push(dove_dove);
+        let fox_hawk = agent_interaction_tracker[i].fox_hawk;
+        interaction_vector.push(fox_hawk);
+        let fox_dove = agent_interaction_tracker[i].fox_dove;
+        interaction_vector.push(fox_dove);
     }
 
     let string_vec: Vec<String> = interaction_vector.iter().map(|x| x.to_string()).collect();
+
+    writer.write_record(string_vec)?;
+
+    Ok(())
+}
+
+pub fn generate_foxusage_csv(
+    pop: usize,
+    agent_interaction_tracker: &Vec<AgentInteractionTracker>,
+    output_directory: &str,
+    seed: u64,
+) -> Result<(), Box<dyn Error>> {
+    let filepath = format!(
+        "./Output/{}/FoxUsage_{}.csv",
+        output_directory, seed
+    );
+
+    let file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&filepath)?;
+
+    let mut writer = WriterBuilder::new().from_writer(file);
+
+    let mut fox_usage_vec: Vec<u8> = Vec::new();
+
+    for i in 0..pop {
+        fox_usage_vec.push(agent_interaction_tracker[i].fox_this_round as u8);
+    }
+
+    let string_vec: Vec<String> = fox_usage_vec.iter().map(|x| x.to_string()).collect();
+
+    writer.write_record(string_vec)?;
+
+    Ok(())
+}
+
+pub fn generate_morality_csv(
+    pop: usize,
+    agents: &Vec<Agent>,
+    output_directory: &str,
+    seed: u64,
+) -> Result<(), Box<dyn Error>> {
+    let filepath = format!(
+        "./Output/{}/Morality_{}.csv",
+        output_directory, seed
+    );
+
+    let file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&filepath)?;
+
+    let mut writer = WriterBuilder::new().from_writer(file);
+
+    let mut morality_vec: Vec<f64> = Vec::new();
+    for i in 0..pop {
+        morality_vec.push(agents[i].morality_rate / (agents[i].morality_rate + agents[i].deviancy_rate));
+    }
+
+    let string_vec: Vec<String> = morality_vec.iter().map(|x| x.to_string()).collect();
 
     writer.write_record(string_vec)?;
 
@@ -475,9 +584,13 @@ pub fn run_track_vars(
     config: &RootConfig,
 ) {
     let rounds = vec![
-        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 200, 400, 500, 600,
-        700, 800, 900, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000, 30000,
-        40000, 50000, 60000, 70000, 80000, 90000, 100000,
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 50, 100, 200, 300, 400, 500, 600, 700, 800,
+        900, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 20000, 30000, 40000,
+        50000, 60000, 70000, 80000, 90000, 100000, 110000, 120000, 130000, 140000, 150000, 160000,
+        170000, 180000, 190000, 200000, 210000, 220000, 230000, 240000, 250000, 260000, 270000,
+        280000, 290000, 300000, 310000, 320000, 330000, 340000, 350000, 360000, 370000, 380000,
+        390000, 400000, 410000, 420000, 430000, 440000, 450000, 460000, 470000, 480000, 490000,
+        500000, 550000, 600000, 650000, 700000, 750000, 800000, 900000, 1000000,
     ];
 
     if rounds.contains(&i) {
@@ -490,11 +603,15 @@ pub fn run_track_vars(
         }
 
         if config.csv.totalinteractions {
-            let _ =
-                generate_totalinteractions_csv(pop, agent_interaction_tracker, output_directory, seed);
+            let _ = generate_totalinteractions_csv(
+                pop,
+                agent_interaction_tracker,
+                output_directory,
+                seed,
+            );
         }
     }
-    
+
     if config.csv.evostats {
         let _ = generate_evostats_csv(i, pop, interaction_tracker, output_directory, seed);
     }
@@ -517,5 +634,13 @@ pub fn run_track_vars(
 
     if config.csv.totalpayoff {
         let _ = generate_totalpayoff_csv(pop, agents, output_directory, seed);
+    }
+
+    if config.csv.foxusage {
+        let _ = generate_foxusage_csv(pop, agent_interaction_tracker, output_directory, seed);
+    }
+
+    if config.csv.morality {
+        let _ = generate_morality_csv(pop, agents, output_directory, seed);
     }
 }

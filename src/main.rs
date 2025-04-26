@@ -1,7 +1,6 @@
-mod data;
 mod utils;
 
-use data::{figure_2b, figure_3a, figure_3b, test_figure};
+use core::f64;
 use rand::prelude::{IndexedRandom, SliceRandom};
 use rand::{Rng, rng};
 use rayon::prelude::*;
@@ -22,6 +21,7 @@ enum Strategy {
     None,
     Hawk,
     Dove,
+    Fox,
 }
 
 #[derive(Clone, Copy)]
@@ -65,16 +65,25 @@ struct Agent {
     strategy: StratVector,
     current_strategy: Strategy,
     current_payoff: f64,
+    morality_rate: f64,
+    deviancy_rate: f64,
+    deviant: bool,
 }
 
 struct StratVector {
-    visit: [f64; 2],
-    host: [f64; 2],
+    visit: Vec<f64>,
+    host: Vec<f64>,
 }
 
 struct PayoffMap {
-    host: Vec<Vec<f32>>,
-    visitor: Vec<Vec<f32>>,
+    hh: f32,
+    hd: f32,
+    dh: f32,
+    dd: f32,
+    fh: f32,
+    hf: f32,
+    fd: f32,
+    df: f32,
     win: f32,
     lose: f32,
 }
@@ -90,6 +99,9 @@ impl Agent {
             strategy: StratVector::new(),
             current_strategy: Strategy::None,
             current_payoff: 0.0,
+            morality_rate: 1.0,
+            deviancy_rate: 1.0,
+            deviant: false,
         }
     }
 
@@ -142,48 +154,74 @@ impl Agent {
 
     fn choose_strategy(&mut self, role: Role) {
         let mut rng = rng();
+
+        let rand_prob: f64 = rng.random();
+        let deviancy_draw: f64 = rand_prob * (self.deviancy_rate + self.morality_rate);
+
+        if deviancy_draw < self.morality_rate {
+            self.deviant = false;
+        } else {
+            self.deviant = true;
+        }
+
         let tremble_draw: f64 = rng.random();
 
         if tremble_draw < self.agent_param.strat_tremble {
-            let strategy = rng.random_range(0..2);
+            let strategy = match (self.deviant, &role) {
+                (true, Role::Visitor) => rng.random_range(0..3),
+                (false, _) | (true, Role::Host) => rng.random_range(0..2),
+            };
+
             self.current_strategy = match strategy {
                 0 => Strategy::Hawk,
                 1 => Strategy::Dove,
+                2 => Strategy::Fox,
                 _ => unreachable!(),
             };
+
             let strat_vec = self.strategy.get_strat(&role);
             strat_vec
                 .iter_mut()
                 .for_each(|x| *x *= 1.0 - self.agent_param.strat_discount);
+
         } else {
+            let rand_prob: f64 = rng.random();
+
+            let mut strat_key: Vec<u8> = match (self.deviant, &role) {
+                (true, Role::Visitor) => (0..3).collect(),
+                (false, _) | (true, Role::Host) => (0..2).collect(),
+            };
+
+            strat_key.shuffle(&mut rng);
+
             let strat_vec = self.strategy.get_strat(&role);
 
-            let partial_sum: Vec<f64> = strat_vec
-                .iter()
-                .scan(0.0, |acc, &x| {
-                    *acc += x;
-                    Some(*acc)
-                })
-                .collect();
+            let mut partial_sum: Vec<f64> = Vec::new();
+            let mut acc: f64 = 0.0;
 
-            let rand_prob: f64 = rng.random();
+            for i in &strat_key {
+                acc += strat_vec[*i as usize];
+                partial_sum.push(acc);
+            }
+
             let weight_strat_draw = rand_prob * partial_sum.last().unwrap_or(&0.0);
 
             for i in 0..partial_sum.len() {
                 if weight_strat_draw <= partial_sum[i] {
-                    let strategy = i;
+                    let strategy = &strat_key[i];
                     self.current_strategy = match strategy {
                         0 => Strategy::Hawk,
                         1 => Strategy::Dove,
+                        2 => Strategy::Fox,
                         _ => unreachable!(),
                     };
                     break;
                 }
             }
-            let strat_vec = self.strategy.get_strat(&role);
-            strat_vec
-                .iter_mut()
-                .for_each(|x| *x *= 1.0 - self.agent_param.strat_discount);
+
+            for i in &strat_key {
+                strat_vec[*i as usize] *= 1.0 - self.agent_param.strat_discount;
+            }
         }
     }
 
@@ -196,6 +234,7 @@ impl Agent {
         let index = match self.current_strategy {
             Strategy::Hawk => 0,
             Strategy::Dove => 1,
+            Strategy::Fox => 2,
             _ => unreachable!(),
         };
 
@@ -213,54 +252,32 @@ impl Agent {
         self.total_payoff += self.current_payoff
     }
 
-    fn normalize_strategy_weights(&mut self, role: Role) {
-        match role {
-            Role::Host => {
-                let sum: f64 = self.strategy.host.iter().sum();
-
-                if sum > 0.0 {
-                    for weight in self.strategy.host.iter_mut() {
-                        *weight /= sum;
-                    }
-                } else {
-                    let len = self.strategy.host.len();
-                    for weight in self.strategy.host.iter_mut() {
-                        *weight = 1.0 / len as f64;
-                    }
-                }
-            },
-            Role::Visitor => {
-                let sum: f64 = self.strategy.visit.iter().sum();
-
-                if sum > 0.0 {
-                    for weight in self.strategy.visit.iter_mut() {
-                        *weight /= sum;
-                    }
-                } else {
-                    let len = self.strategy.visit.len();
-                    for weight in self.strategy.visit.iter_mut() {
-                        *weight = 1.0 / len as f64;
-                    }
-                }
-            },
-        }
-    }
-
     fn update_score(&mut self) {
         self.score = self.total_payoff;
     }
 
+    fn discount_morality(&mut self) {
+        self.morality_rate *= 1.0 - self.agent_param.strat_discount;
+        self.deviancy_rate *= 1.0 - self.agent_param.strat_discount;
+    }
+
+    fn add_morality_payoff(&mut self) {
+        match self.deviant {
+            true => self.deviancy_rate += self.current_payoff * self.agent_param.strat_learning_speed,
+            false => self.morality_rate += self.current_payoff * self.agent_param.strat_learning_speed,
+        }
+    }
 }
 
 impl StratVector {
     fn new() -> StratVector {
         StratVector {
-            visit: [1.0, 1.0],
-            host: [1.0, 1.0],
+            visit: vec![1.0, 1.0, 1.0],
+            host: vec![1.0, 1.0],
         }
     }
 
-    fn get_strat(&mut self, role: &Role) -> &mut [f64; 2] {
+    fn get_strat(&mut self, role: &Role) -> &mut Vec<f64> {
         match role {
             Role::Host => &mut self.host,
             Role::Visitor => &mut self.visit,
@@ -286,7 +303,7 @@ impl Network {
     fn normalize_network_weights(&mut self, agent_id: AgentId) {
         let sum: f64 = self[agent_id].iter().sum();
 
-        for weight in self[agent_id].iter_mut(){
+        for weight in self[agent_id].iter_mut() {
             *weight /= sum;
         }
     }
@@ -295,8 +312,14 @@ impl Network {
 impl PayoffMap {
     fn new(payoff: PayoffScores) -> PayoffMap {
         PayoffMap {
-            host: vec![[0.0, payoff.dh].to_vec(), [1.0, payoff.dd].to_vec()],
-            visitor: vec![[0.0, payoff.hd].to_vec(), [0.4, payoff.dd].to_vec()],
+            hh: 0.0,
+            hd: payoff.hd,
+            dh: payoff.dh,
+            dd: payoff.dd,
+            fh: payoff.fh,
+            hf: payoff.hf,
+            fd: payoff.fd,
+            df: payoff.df,
             win: payoff.hh_f,
             lose: payoff.hh_f / 3.0,
         }
@@ -317,6 +340,8 @@ fn game(
     let visitor_strategy: Strategy = agents[visitor].current_strategy;
     let host_strategy: Strategy = agents[host].current_strategy;
 
+    agent_interaction_tracker[visitor].fox_this_round = false;
+
     match (visitor_strategy, host_strategy) {
         (Strategy::Hawk, Strategy::Hawk) => {
             interaction_tracker.hawk_hawk += 1;
@@ -331,25 +356,41 @@ fn game(
             }
         }
         (Strategy::Hawk, Strategy::Dove) => {
-            agents[visitor].current_payoff = payoffs.visitor[0][1] as f64;
-            agents[host].current_payoff = payoffs.host[0][1] as f64;
+            agents[visitor].current_payoff = payoffs.hd as f64;
+            agents[host].current_payoff = payoffs.dh as f64;
             interaction_tracker.hawk_dove += 1;
             agent_interaction_tracker[visitor].hawk_dove += 1;
             agent_interaction_tracker[host].hawk_dove += 1;
         }
         (Strategy::Dove, Strategy::Hawk) => {
-            agents[visitor].current_payoff = payoffs.visitor[1][0] as f64;
-            agents[host].current_payoff = payoffs.host[1][0] as f64;
+            agents[visitor].current_payoff = payoffs.dh as f64;
+            agents[host].current_payoff = payoffs.hd as f64;
             interaction_tracker.dove_hawk += 1;
             agent_interaction_tracker[visitor].dove_hawk += 1;
             agent_interaction_tracker[host].dove_hawk += 1;
         }
         (Strategy::Dove, Strategy::Dove) => {
-            agents[visitor].current_payoff = payoffs.visitor[1][1] as f64;
-            agents[host].current_payoff = payoffs.host[1][1] as f64;
+            agents[visitor].current_payoff = payoffs.dd as f64;
+            agents[host].current_payoff = payoffs.dd as f64;
             interaction_tracker.dove_dove += 1;
             agent_interaction_tracker[visitor].dove_dove += 1;
             agent_interaction_tracker[host].dove_dove += 1;
+        }
+        (Strategy::Fox, Strategy::Hawk) => {
+            agents[visitor].current_payoff = payoffs.fh as f64;
+            agents[host].current_payoff = payoffs.hf as f64;
+            interaction_tracker.fox_hawk += 1;
+            agent_interaction_tracker[visitor].fox_hawk += 1;
+            agent_interaction_tracker[visitor].fox_this_round = true;
+            agent_interaction_tracker[host].fox_hawk += 1;
+        }
+        (Strategy::Fox, Strategy::Dove) => {
+            agents[visitor].current_payoff = payoffs.fd as f64;
+            agents[host].current_payoff = payoffs.df as f64;
+            interaction_tracker.fox_dove += 1;
+            agent_interaction_tracker[visitor].fox_dove += 1;
+            agent_interaction_tracker[visitor].fox_this_round = true;
+            agent_interaction_tracker[host].fox_dove += 1;
         }
         _ => unreachable!(),
     }
@@ -403,8 +444,11 @@ fn run_time_step(
         agents[id].add_strategy_payoff(Role::Visitor);
         agents[host_id].add_strategy_payoff(Role::Host);
 
-        // agents[id].normalize_strategy_weights(Role::Visitor);
-        // agents[host_id].normalize_strategy_weights(Role::Host);
+        agents[id].discount_morality();
+        agents[id].add_morality_payoff();
+
+        agents[host_id].discount_morality();
+        agents[host_id].add_morality_payoff();
 
         network.normalize_network_weights(AgentId(id as u32));
     }
@@ -503,11 +547,4 @@ fn main() {
         println!("{}", config.description);
         run_config_file(&config, &args[1]);
     });
-
-    let err = figure_2b();
-    println!("{:?}", err);
-    // let _ = figure_3a();
-
-    // println!("{:?}", figure_3b());
-
 }
