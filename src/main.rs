@@ -1,6 +1,5 @@
 mod utils;
 
-use core::f64;
 use rand::prelude::{IndexedRandom, SliceRandom};
 use rand::{Rng, rng};
 use rayon::prelude::*;
@@ -163,6 +162,12 @@ impl Agent {
         } else {
             self.deviant = true;
         }
+
+        // match (deviancy_draw > self.morality_rate, &role) {
+        //     (true, Role::Visitor) => self.deviant = true,
+        //     (false, _ ) => self.deviant = false,
+        //     ( _ , Role::Host) => self.deviant = false,
+        // }
 
         let tremble_draw: f64 = rng.random();
 
