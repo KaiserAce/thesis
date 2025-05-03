@@ -27,15 +27,15 @@ for path in folders:
         agent_host = host_strat.reshape(-1, 2)
 
         for entry in range(cols):
-            outer_val = agent_visitor[entry, 0] / (agent_visitor[entry, 0] + agent_visitor[entry, 1])
+            outer_val = agent_visitor[entry, 0]
             inner_val = agent_host[entry, 0]
-            fox_val = agent_visitor[entry, 2] / (agent_visitor[entry, 0] + agent_visitor[entry, 1] + agent_visitor[entry, 2])
+            fox_val = agent_visitor[entry, 2]
 
             alpha = 1.0
             y_pos = 1.1 * index
 
             color_outer = '#705259' if outer_val > 0.8 else '#167d9c'
-            color_inner = '#705259'  if inner_val > 0.8 else '#167d9c'
+            color_inner = '#705259'  if inner_val > 0.9 else '#167d9c'
 
             base_color = '#efa07d'
             rgba_color = mcolors.to_rgba(base_color, fox_val)
@@ -52,8 +52,7 @@ for path in folders:
     ax.set_ylim(-0.5, rows + 0.5)
 
 # Set axis ticks and labels
-    # ax.set_xticks(range(cols))
-    # ax.set_xticklabels(str(range(1, cols + 1)))  # X-axis labels range from 1 to 20
+    ax.set_xticks(range(cols))
 
 # Explicitly calculate y-ticks and labels
     y_ticks = np.linspace(0, rows, rows)  # Create evenly spaced ticks

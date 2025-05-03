@@ -8,8 +8,8 @@ dynamic_rank = true
 output_directory = "ff_0.7"
 
 [agent_parameters]
-strat_learning_speed = 0.01
-net_learning_speed = 0.01
+strat_learning_speed = 1.0
+net_learning_speed = 1.0
 strat_discount = 0.01
 net_discount = 0.01
 strat_tremble = 0.01

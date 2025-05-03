@@ -109,11 +109,11 @@ impl Agent {
         let mut friend_id: Option<usize> = None;
         let rand_tremble: f64 = rng.random();
 
-        if rand_tremble < self.agent_param.net_tremble {
+        if rand_tremble <= self.agent_param.net_tremble {
             for i in 0..temp_vec.len() {
                 network.discount_weight(
                     self.agent_id,
-                    AgentId(i as u32),
+                    AgentId(temp_vec[i] as u32),
                     self.agent_param.net_discount,
                 );
             }
@@ -134,13 +134,13 @@ impl Agent {
             let interaction_random_draw: f64 = rand_prob * partial_sum.last().unwrap_or(&0.0);
 
             for i in 0..partial_sum.len() {
-                if friend_id.is_none() && interaction_random_draw <= partial_sum[i] {
+                if friend_id.is_none() && interaction_random_draw <= partial_sum[i] && temp_vec[i] != self.agent_id.0 as usize {
                     friend_id = Some(temp_vec[i]);
                 }
 
                 network.discount_weight(
                     self.agent_id,
-                    AgentId(i as u32),
+                    AgentId(temp_vec[i] as u32),
                     self.agent_param.net_discount,
                 );
             }
@@ -354,9 +354,9 @@ fn game(
             agent_interaction_tracker[host].hawk_hawk += 1;
             if visitor_score > host_score {
                 agents[visitor].current_payoff = payoffs.win as f64;
-                agents[host].current_payoff = payoffs.lose as f64;
+                agents[host].current_payoff = payoffs.lose as f64 + payoffs.hh as f64;
             } else {
-                agents[visitor].current_payoff = payoffs.lose as f64;
+                agents[visitor].current_payoff = payoffs.lose as f64 + payoffs.hh as f64;
                 agents[host].current_payoff = payoffs.win as f64;
             }
         }
