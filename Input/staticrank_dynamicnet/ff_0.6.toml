@@ -9,7 +9,7 @@ output_directory = "ff_0.6"
 
 [agent_parameters]
 strat_learning_speed = 0.01
-net_learning_speed = 0.0
+net_learning_speed = 0.01
 strat_discount = 0.01
 net_discount = 0.01
 strat_tremble = 0.01

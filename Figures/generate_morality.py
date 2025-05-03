@@ -25,7 +25,7 @@ for path in folders:
         sorted_moral_weights = moral_weights[sorted_ranks, :]
 
         plt.figure(figsize=(16, 8))
-        sns.heatmap(sorted_moral_weights, cmap="magma_r", vmin=0, vmax=1,
+        sns.heatmap(sorted_moral_weights, cmap="YlOrBr", vmin=0, vmax=1,
                     cbar_kws={'label': 'Morality Weight'},
                     yticklabels=False)  # Disable default y-tick labels
 

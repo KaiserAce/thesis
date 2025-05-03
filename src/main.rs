@@ -224,9 +224,9 @@ impl Agent {
                 }
             }
 
-            for i in &strat_key {
-                strat_vec[*i as usize] *= 1.0 - self.agent_param.strat_discount;
-            }
+            strat_vec
+                .iter_mut()
+                .for_each(|x| *x *= 1.0 - self.agent_param.strat_discount);
         }
     }
 
