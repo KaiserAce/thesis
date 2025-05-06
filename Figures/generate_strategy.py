@@ -35,24 +35,24 @@ for path in folders:
             y_pos = 1.1 * index
 
             color_outer = '#705259' if outer_val > 0.8 else '#167d9c'
-            color_inner = '#705259'  if inner_val > 0.9 else '#167d9c'
+            color_inner = '#705259'  if inner_val > 0.8 else '#167d9c'
 
             base_color = '#efa07d'
             rgba_color = mcolors.to_rgba(base_color, fox_val)
 
-            circle1 = mpatches.Circle((ranks[entry] - 1, y_pos), 0.4, color=color_outer, alpha=alpha)
-            circle2 = mpatches.Circle((ranks[entry] - 1, y_pos), 0.2, color=color_inner, alpha=alpha)
-            circle3 = mpatches.Circle((ranks[entry] - 1, y_pos), 0.05, color=rgba_color, alpha=fox_val)
+            circle1 = mpatches.Circle((ranks[entry], y_pos), 0.4, color=color_outer, alpha=alpha)
+            circle2 = mpatches.Circle((ranks[entry], y_pos), 0.2, color=color_inner, alpha=alpha)
+            circle3 = mpatches.Circle((ranks[entry], y_pos), 0.05, color=rgba_color, alpha=fox_val)
 
             ax.add_artist(circle1)
             ax.add_artist(circle2)
             ax.add_artist(circle3)
 
-    ax.set_xlim(-0.5, cols - 0.5)
+    ax.set_xlim(0.5, cols + 0.5)
     ax.set_ylim(-0.5, rows + 0.5)
 
 # Set axis ticks and labels
-    ax.set_xticks(range(cols))
+    ax.set_xticks(range(1, cols + 1))
 
 # Explicitly calculate y-ticks and labels
     y_ticks = np.linspace(0, rows, rows)  # Create evenly spaced ticks
