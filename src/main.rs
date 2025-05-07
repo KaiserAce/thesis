@@ -266,10 +266,22 @@ impl Agent {
         self.deviancy_rate *= 1.0 - self.agent_param.strat_discount;
     }
 
-    fn add_morality_payoff(&mut self) {
-        match self.deviant {
-            true => self.deviancy_rate += self.current_payoff * self.agent_param.strat_learning_speed,
-            false => self.morality_rate += self.current_payoff * self.agent_param.strat_learning_speed,
+    fn add_morality_payoff(&mut self, host_score: f64, pop: usize) {
+        // match self.deviant {
+        //     true => self.deviancy_rate += self.current_payoff * self.agent_param.strat_learning_speed,
+        //     false => self.morality_rate += self.current_payoff * self.agent_param.strat_learning_speed,
+        // }
+
+        if self.score > host_score {
+            self.morality_rate += (self.score - host_score / pop as f64) * self.agent_param.strat_learning_speed;
+        } else {
+            self.deviancy_rate += (host_score - self.score / pop as f64) * self.agent_param.strat_learning_speed;
+        }
+
+        match self.current_strategy {
+            Strategy::Fox => self.deviancy_rate += self.current_payoff * self.agent_param.strat_learning_speed,
+            Strategy::Dove => self.morality_rate += self.current_payoff * self.agent_param.strat_learning_speed,
+            _ => (),
         }
     }
 }
@@ -450,7 +462,9 @@ fn run_time_step(
         agents[host_id].add_strategy_payoff(Role::Host);
 
         agents[id].discount_morality();
-        agents[id].add_morality_payoff();
+
+        let host_score = agents[host_id].score;
+        agents[id].add_morality_payoff(host_score, pop);
 
         // agents[host_id].discount_morality();
         // agents[host_id].add_morality_payoff();
@@ -458,11 +472,9 @@ fn run_time_step(
         network.normalize_network_weights(AgentId(id as u32));
     }
 
-    if dynamic_rank {
-        if i % 1000 == 0 {
-            for j in 0..pop {
-                agents[j].update_score();
-            }
+    if dynamic_rank && i % 1000 == 0{
+        for j in 0..pop {
+            agents[j].update_score();
         }
     }
 

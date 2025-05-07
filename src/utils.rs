@@ -613,11 +613,9 @@ pub fn run_track_vars(
         }
     }
 
-    if config.csv.laststrat {
-        if i == 100_000 {
-            let _ = generate_strategyvisit_csv(agents, output_directory, seed);
-            let _ = generate_strategyhost_csv(agents, output_directory, seed);
-        }
+    if config.csv.laststrat && i == 100_000{
+        let _ = generate_strategyvisit_csv(agents, output_directory, seed);
+        let _ = generate_strategyhost_csv(agents, output_directory, seed);
     }
 
     if config.csv.evostats {
