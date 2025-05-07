@@ -6,3 +6,5 @@ run:
 	python3 -O generate_cycles.py
 	python3 -O generate_foxweighttable.py
 	python3 -O generate_totalpayoffs.py
+	python3 -O generate_purehawks.py
+	python3 -O generate_foxuse.py

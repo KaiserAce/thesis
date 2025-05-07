@@ -1,0 +1,40 @@
+description = "Static Rank Dynamic Net ff=0.6"
+
+[simulation]
+seeds = 1
+max_time_step = 100000
+population = 20
+dynamic_rank = false
+output_directory = "ff_0.6"
+
+[agent_parameters]
+strat_learning_speed = 1.0
+net_learning_speed = 1.0
+strat_discount = 0.01
+net_discount = 0.01
+strat_tremble = 0.01
+net_tremble = 0.01
+
+[payoffs]
+hd = 1.0
+dh = 0.4
+dd = 0.6
+fh = 0.7
+hf = 0.1
+fd = 0.8
+df = 0.2
+hh_f = 0.6
+
+[csv]
+weights = false
+scores = false
+totalinteractions = false
+evostats = false
+strategyvisit = false
+strategyhost = false
+laststrat = true
+netstd = false
+outscore = false
+totalpayoff = false
+foxusage = true
+morality = false

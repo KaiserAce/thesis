@@ -32,6 +32,7 @@ totalinteractions = false
 evostats = true
 strategyvisit = true
 strategyhost = true
+laststrat = false
 netstd = false
 outscore = true
 totalpayoff = true

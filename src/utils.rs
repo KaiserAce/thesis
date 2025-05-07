@@ -66,6 +66,7 @@ pub struct CSVFiles {
     pub evostats: bool,
     pub strategyvisit: bool,
     pub strategyhost: bool,
+    pub laststrat: bool,
     pub netstd: bool,
     pub outscore: bool,
     pub totalpayoff: bool,
@@ -609,6 +610,13 @@ pub fn run_track_vars(
                 output_directory,
                 seed,
             );
+        }
+    }
+
+    if config.csv.laststrat {
+        if i == 100_000 {
+            let _ = generate_strategyvisit_csv(agents, output_directory, seed);
+            let _ = generate_strategyhost_csv(agents, output_directory, seed);
         }
     }
 

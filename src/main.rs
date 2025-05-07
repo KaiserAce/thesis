@@ -157,17 +157,17 @@ impl Agent {
         let rand_prob: f64 = rng.random();
         let deviancy_draw: f64 = rand_prob * (self.deviancy_rate + self.morality_rate);
 
-        if deviancy_draw < self.morality_rate {
-            self.deviant = false;
-        } else {
-            self.deviant = true;
-        }
-
-        // match (deviancy_draw > self.morality_rate, &role) {
-        //     (true, Role::Visitor) => self.deviant = true,
-        //     (false, _ ) => self.deviant = false,
-        //     ( _ , Role::Host) => self.deviant = false,
+        // if deviancy_draw < self.morality_rate {
+        //     self.deviant = false;
+        // } else {
+        //     self.deviant = true;
         // }
+
+        match (deviancy_draw > self.morality_rate, &role) {
+            (true, Role::Visitor) => self.deviant = true,
+            (false, _ ) => self.deviant = false,
+            ( _ , Role::Host) => self.deviant = false,
+        }
 
         let tremble_draw: f64 = rng.random();
 
@@ -452,8 +452,8 @@ fn run_time_step(
         agents[id].discount_morality();
         agents[id].add_morality_payoff();
 
-        agents[host_id].discount_morality();
-        agents[host_id].add_morality_payoff();
+        // agents[host_id].discount_morality();
+        // agents[host_id].add_morality_payoff();
 
         network.normalize_network_weights(AgentId(id as u32));
     }
